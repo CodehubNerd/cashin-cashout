@@ -109,7 +109,7 @@ interface ServiceEventSubmissionProps {
 }
 
 export function ServiceEventSubmission({}: ServiceEventSubmissionProps) {
-  const { user } = useAuth();
+  const { agent } = useAuth();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -205,7 +205,7 @@ export function ServiceEventSubmission({}: ServiceEventSubmissionProps) {
       errors.push("Service must be submitted within 24 hours of assistance");
     }
 
-    if (user?.kycStatus !== "verified") {
+    if (agent?.kycStatus !== "verified") {
       errors.push("KYC verification required before submitting service events");
     }
 
