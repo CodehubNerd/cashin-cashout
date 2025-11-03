@@ -13,7 +13,7 @@ interface Agent {
   fund_limit?: number
   phone_number: string
   username?: string
-  // ...other agent fields...
+
 }
 
 interface AuthContextType {
