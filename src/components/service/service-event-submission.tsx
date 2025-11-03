@@ -1,7 +1,7 @@
 import type React from "react";
 
 import { useState, useRef } from "react";
-import { useAuth } from "@/lib/AuthContext";
+
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -109,7 +109,7 @@ interface ServiceEventSubmissionProps {
 }
 
 export function ServiceEventSubmission({}: ServiceEventSubmissionProps) {
-  const { agent } = useAuth();
+ 
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -205,9 +205,6 @@ export function ServiceEventSubmission({}: ServiceEventSubmissionProps) {
       errors.push("Service must be submitted within 24 hours of assistance");
     }
 
-    if (agent?.kycStatus !== "verified") {
-      errors.push("KYC verification required before submitting service events");
-    }
 
     return errors;
   };
