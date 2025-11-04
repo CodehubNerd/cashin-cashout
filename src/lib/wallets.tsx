@@ -11,7 +11,7 @@ export const walletConfig: WalletConfig[] = [
   { name: "Emali", enabled: false, icon: "/emali.jpeg" },
   { name: "ISnstaCash", enabled: false, icon: "/instacash.png" },
 ];
-
+//
 export interface TransactionType {
   type: string;
   title: string;
