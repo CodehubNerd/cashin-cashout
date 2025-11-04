@@ -6,7 +6,7 @@ export interface WalletConfig {
 
 export const walletConfig: WalletConfig[] = [
   { name: "MOMO", enabled: true, icon: "/momo.svg" },
-  { name: "Unayo", enabled: true, icon: "/unayo.svg" },
+  { name: "Unayo", enabled: false, icon: "/unayo.svg" },
   { name: "Delta Pay", enabled: false, icon: "/delta.jpeg" },
   { name: "Emali", enabled: false, icon: "/emali.jpeg" },
   { name: "ISnstaCash", enabled: false, icon: "/instacash.png" },
