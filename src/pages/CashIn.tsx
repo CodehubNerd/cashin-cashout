@@ -1,209 +1,291 @@
-import React from "react";
-import Layout from "@/components/Layout";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import React from 'react'
+import Layout from '@/components/Layout'
+import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "../components/ui/card";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Label } from "../components/ui/label";
-import { useToast } from "@/lib/use-toast";
-import { ArrowLeft } from "lucide-react";
-import { WalletProvider, walletProviders } from "@/lib/wallets";
+} from '../components/ui/card'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
+import { useToast } from '@/lib/use-toast'
+import { ArrowLeft } from 'lucide-react'
+import { WalletProvider, walletProviders } from '@/lib/wallets'
+import { useAuth } from '@/lib/AuthContext'
+import { AUTH_URL } from '../api/config'
 
 interface FormData {
-  msidn: string;
-  amount: string;
-  voucherNumber: string;
+  msidn: string
+  amount: string
+  voucherNumber: string
+  pin?: string
 }
 
 interface CustomerData {
-  name: string;
-  phone: string;
-  balance: number;
-  kycStatus: string;
+  name: string
+  phone: string
+  balance: number
+  kycStatus: string
 }
 
 interface UnayoResponseBody {
-  AmountRedeemed: number;
-  AmountUnredeemed: number;
-  CcgTenantSCode: string;
-  DestNodTrhLineId: string;
-  InstanceId: string;
-  NodReqInId: string;
-  OriginMimControlId: string;
-  QRCode: string | null;
-  SrcNodTrhLineId: string;
-  UniqueTransactionId: string;
-  VoucherCode: string | null;
+  AmountRedeemed: number
+  AmountUnredeemed: number
+  CcgTenantSCode: string
+  DestNodTrhLineId: string
+  InstanceId: string
+  NodReqInId: string
+  OriginMimControlId: string
+  QRCode: string | null
+  SrcNodTrhLineId: string
+  UniqueTransactionId: string
+  VoucherCode: string | null
 }
 
 interface UnayoResponseTrailer {
-  StatusCode: number;
-  StatusDesc: string;
-  DetailedDesc: string;
-  Elapsed: number;
+  StatusCode: number
+  StatusDesc: string
+  DetailedDesc: string
+  Elapsed: number
 }
 
 interface UnayoApiResponse {
   response: {
-    Body: UnayoResponseBody;
-    Trailer: UnayoResponseTrailer;
-  };
+    Body: UnayoResponseBody
+    Trailer: UnayoResponseTrailer
+  }
 }
 
-// CashIn Component
+// CashIn Component (rewritten to mirror CashOut flow)
 const CashIn: React.FC = () => {
+  const { sessionToken, agent } = useAuth()
   const [step, setStep] = React.useState<
-    "details" | "kyc" | "confirm" | "processing" | "complete"
-  >("details");
+    'method' | 'transaction' | 'kyc' | 'processing' | 'complete'
+  >('method')
   const [selectedWallet, setSelectedWallet] =
-    React.useState<WalletProvider | null>(null);
+    React.useState<WalletProvider | null>(null)
+  const [selectedMethod, setSelectedMethod] = React.useState<
+    'normal' | 'voucher' | null
+  >(null)
   const [customerData, setCustomerData] = React.useState<CustomerData | null>(
     null
-  );
-  const [agentBalance, setAgentBalance] = React.useState<number>(0);
+  )
+  const [agentBalance, setAgentBalance] = React.useState<number>(0)
   const [formData, setFormData] = React.useState<FormData>({
-    msidn: "",
-    amount: "",
-    voucherNumber: "",
-  });
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
-  const navigate = useNavigate();
-  const { toast } = useToast();
+    msidn: '',
+    amount: '',
+    voucherNumber: '',
+    pin: '',
+  })
+  const [isLoading, setIsLoading] = React.useState<boolean>(false)
+  const [lastTransactionId, setLastTransactionId] = React.useState<
+    string | null
+  >(null)
+  const navigate = useNavigate()
+  const { toast } = useToast()
 
-  // On mount, check URL for pre-selected wallet and set agent balance
+  // On mount, check URL for pre-selected wallet and set agent balance from logged-in agent
   React.useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const walletName = params.get("wallet");
-    const wallet = walletProviders.find((w) => w.name === walletName);
+    const params = new URLSearchParams(window.location.search)
+    const walletName = params.get('wallet')
+    const wallet = walletProviders.find((w) => w.name === walletName)
     if (wallet) {
-      setSelectedWallet(wallet);
-      // Mock agent balance
-      const mockAgentBalance = Math.floor(Math.random() * 10000) + 2000;
-      setAgentBalance(mockAgentBalance);
+      setSelectedWallet(wallet)
+      const realBalance =
+        agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
+      setAgentBalance(realBalance)
+
+      // Skip method selection if wallet only supports one method
+      if (wallet.supportedMethods?.length === 1) {
+        setSelectedMethod(wallet.supportedMethods[0])
+        setStep('transaction')
+      }
     } else {
-      // If no valid wallet, redirect back to selection
-      navigate("/distributor/cico");
+      navigate('/selection')
     }
-  }, [navigate]);
+  }, [navigate, agent])
+
+  const handleMethodSelection = (method: 'normal' | 'voucher') => {
+    setSelectedMethod(method)
+    setStep('transaction')
+  }
 
   const handleKYCLookup = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
     if (!formData.msidn || !formData.amount) {
       toast({
-        title: "Missing Information",
-        description: "Please enter phone number and amount",
-        variant: "destructive",
-      });
-      return;
+        title: 'Missing Information',
+        description: 'Please enter phone number and amount',
+        variant: 'destructive',
+      })
+      return
     }
 
-    const amount = parseFloat(formData.amount);
+    const amount = parseFloat(formData.amount)
     if (amount <= 0) {
       toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
-        variant: "destructive",
-      });
-      return;
+        title: 'Invalid Amount',
+        description: 'Please enter a valid amount',
+        variant: 'destructive',
+      })
+      return
     }
 
-    setIsLoading(true);
+    setIsLoading(true)
 
-    // Simulate KYC lookup
+    // Simulate lookup but base displayed KYC on logged agent
     setTimeout(() => {
       const mockCustomer: CustomerData = {
-        name: "Thembinkosi Mkhonta",
+        name: 'Thembinkosi Mkhonta',
         phone: formData.msidn,
         balance: Math.floor(Math.random() * 5000) + 500,
-        kycStatus: "Verified",
-      };
+        kycStatus: agent ? 'Verified' : 'Verified',
+      }
 
-      setCustomerData(mockCustomer);
-      setIsLoading(false);
-      setStep("kyc");
-    }, 1500);
-  };
+      // Note: For cash-in agent balance isn't used to validate the customer's available money,
+      // but we still show the customer's mock balance and proceed.
+      setCustomerData(mockCustomer)
+      setIsLoading(false)
+      setStep('kyc')
+    }, 1200)
+  }
 
-  const handleKYCConfirm = () => {
-    if (selectedWallet?.requiresPin) {
-      setStep("processing");
+  const handleKYCConfirm = async () => {
+    if (!customerData || !formData.amount) {
       toast({
-        title: "PIN Request Sent",
-        description: "Customer will receive PIN prompt on their device",
-      });
-
-      // Simulate customer entering PIN on their device
-      setTimeout(() => {
-        setStep("complete");
-        setAgentBalance((prev) => prev + parseFloat(formData.amount));
-        toast({
-          title: "Transaction Successful",
-          description: `Cash-in of E ${formData.amount} completed`,
-        });
-      }, 3000);
-    } else {
-      // Direct processing without PIN
-      setStep("processing");
-      setTimeout(() => {
-        setStep("complete");
-        setAgentBalance((prev) => prev + parseFloat(formData.amount));
-        toast({
-          title: "Transaction Successful",
-          description: `Cash-in of E ${formData.amount} completed`,
-        });
-      }, 2000);
+        title: 'Missing Data',
+        description: 'Customer or amount missing',
+        variant: 'destructive',
+      })
+      return
     }
-  };
+
+    setStep('processing')
+    setIsLoading(true)
+    toast({
+      title: 'PIN Request Sent',
+      description: 'Customer will receive PIN prompt on their device',
+    })
+
+    try {
+      const payload = {
+        amount: parseFloat(formData.amount).toFixed(2),
+        party_id: customerData.phone,
+        description: 'Cash deposit for customer',
+      }
+
+      const res = await axios.post(
+        `${AUTH_URL}/v1/cico/agents/cash-in`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sessionToken ?? ''}`,
+          },
+        }
+      )
+
+      const resp = res.data
+      if (resp?.success && resp?.data) {
+        const txId = resp.data.transaction_id
+        const balanceAfter = resp.data.balance_after
+        setLastTransactionId(txId ?? null)
+        setAgentBalance(
+          typeof balanceAfter === 'number'
+            ? balanceAfter
+            : agentBalance + parseFloat(formData.amount)
+        )
+        setStep('complete')
+        toast({
+          title: 'Transaction Successful',
+          description: `Cash-in of E ${formData.amount} completed`,
+        })
+      } else {
+        throw new Error(resp?.message || 'Cash-in failed')
+      }
+    } catch (error: any) {
+      console.error('Cash-in failed:', error)
+
+      const serverData = error?.response?.data
+      let description =
+        error?.message || 'Unable to process cash-in transaction'
+
+      if (serverData) {
+        if (typeof serverData.error === 'string') {
+          description = serverData.error
+        } else if (typeof serverData.message === 'string') {
+          description = serverData.message
+        } else if (serverData.response?.Trailer?.DetailedDesc) {
+          description = serverData.response.Trailer.DetailedDesc
+        }
+
+        const parts: string[] = []
+        if (serverData.code) parts.push(`Code: ${serverData.code}`)
+        if (typeof serverData.current_balance !== 'undefined')
+          parts.push(`Current: E ${serverData.current_balance}`)
+        if (typeof serverData.required_amount !== 'undefined')
+          parts.push(`Required: E ${serverData.required_amount}`)
+        if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
+      toast({
+        title: 'Transaction Failed',
+        description,
+        variant: 'destructive',
+      })
+      setStep('transaction')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleDirectTransaction = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
-    if (!selectedWallet) return;
+    if (!selectedWallet) return
 
-    // Only handle Unayo transactions
-    if (selectedWallet.name !== "Unayo") {
+    // Only handle Unayo voucher flow as special case
+    if (selectedWallet.name !== 'Unayo') {
       toast({
-        title: "Unsupported Wallet",
-        description: "This implementation only supports Unayo",
-        variant: "destructive",
-      });
-      return;
+        title: 'Unsupported Wallet',
+        description:
+          'This implementation only supports Unayo for direct voucher processing',
+        variant: 'destructive',
+      })
+      return
     }
 
     // Validation - Unayo requires voucher number and amount
     if (!formData.voucherNumber || !formData.amount) {
       toast({
-        title: "Missing Information",
-        description: "Please enter voucher number and amount",
-        variant: "destructive",
-      });
-      return;
+        title: 'Missing Information',
+        description: 'Please enter voucher number and amount',
+        variant: 'destructive',
+      })
+      return
     }
 
-    const amount = parseFloat(formData.amount);
+    const amount = parseFloat(formData.amount)
     if (amount <= 0) {
       toast({
-        title: "Invalid Amount",
-        description: "Please enter a valid amount",
-        variant: "destructive",
-      });
-      return;
+        title: 'Invalid Amount',
+        description: 'Please enter a valid amount',
+        variant: 'destructive',
+      })
+      return
     }
 
-    setIsLoading(true);
-    setStep("processing");
+    setIsLoading(true)
+    setStep('processing')
 
     try {
       const response = await axios.post<UnayoApiResponse>(
-        "https://payment.centurionbd.com/api/v1/unayo/redeem/cashin",
+        'https://payment.centurionbd.com/api/v1/unayo/redeem/cashin',
         {
           meta: {
             voucher_code: formData.voucherNumber,
@@ -212,190 +294,278 @@ const CashIn: React.FC = () => {
         },
         {
           headers: {
-            "x-api-key":
-              "c99fa7686268044376e345fe10b74b77592c5bf1dbe2476d1457ce64f1aff0a2",
-            "Content-Type": "application/json",
+            'x-api-key':
+              'c99fa7686268044376e345fe10b74b77592c5bf1dbe2476d1457ce64f1aff0a2',
+            'Content-Type': 'application/json',
           },
         }
-      );
+      )
 
-      console.log("Cash in response data", response.data);
+      console.log('Cash in response data', response.data)
 
-      // Check if response is successful based on StatusCode
-      if (response.status === 200 && response.data.response.Trailer.StatusCode === 0) {
-        const amountRedeemed = response.data.response.Body.AmountRedeemed;
-        setStep("complete");
-        setAgentBalance((prev) => prev + amountRedeemed);
+      if (
+        response.status === 200 &&
+        response.data.response.Trailer.StatusCode === 0
+      ) {
+        const amountRedeemed = response.data.response.Body.AmountRedeemed
+        setStep('complete')
+        setAgentBalance((prev) => prev + amountRedeemed)
+        setLastTransactionId(
+          response.data.response.Body.UniqueTransactionId ?? null
+        )
         toast({
-          title: "Transaction Successful",
+          title: 'Transaction Successful',
           description: `Cash-in of E ${amountRedeemed} completed`,
-        });
+        })
       } else {
-        const errorMessage = response.data.response.Trailer.DetailedDesc || "Transaction failed";
-        throw new Error(errorMessage);
+        throw new Error(
+          response.data.response.Trailer.DetailedDesc || 'Transaction failed'
+        )
       }
     } catch (error: any) {
-      console.error("Unayo Cash-in failed:", error);
+      console.error('Unayo Cash-in failed:', error)
+
+      const serverData = error?.response?.data
+      let description =
+        error?.message || 'Unable to process cash-in transaction'
+
+      if (serverData) {
+        if (serverData.response?.Trailer?.DetailedDesc) {
+          description = serverData.response.Trailer.DetailedDesc
+        } else if (typeof serverData.error === 'string') {
+          description = serverData.error
+        } else if (typeof serverData.message === 'string') {
+          description = serverData.message
+        }
+
+        const parts: string[] = []
+        if (serverData.code) parts.push(`Code: ${serverData.code}`)
+        if (serverData.response?.Body?.AmountRedeemed !== undefined)
+          parts.push(`Redeemed: E ${serverData.response.Body.AmountRedeemed}`)
+        if (typeof serverData.current_balance !== 'undefined')
+          parts.push(`Current: E ${serverData.current_balance}`)
+        if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
       toast({
-        title: "Transaction Failed",
-        description:
-          error.response?.data?.response?.Trailer?.DetailedDesc ||
-          error.message ||
-          "Unable to process cash-in transaction",
-        variant: "destructive",
-      });
-      setStep("details");
+        title: 'Transaction Failed',
+        description,
+        variant: 'destructive',
+      })
+      setStep('transaction')
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const formatCurrency = (amount: string | number): string => {
-    const num = typeof amount === "string" ? parseFloat(amount) : amount;
-    return isNaN(num) ? "E 0.00" : `E ${num.toFixed(2)}`;
-  };
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount
+    return isNaN(num) ? 'E 0.00' : `E ${num.toFixed(2)}`
+  }
 
-  // KYC Confirmation Step (for mobile money requiring KYC)
-  if (step === "kyc" && customerData) {
+  // Method Selection Step (if wallet supports multiple methods)
+  if (
+    step === 'method' &&
+    selectedWallet?.supportedMethods &&
+    selectedWallet.supportedMethods.length > 1
+  ) {
     return (
-      <Layout title="Confirm Customer Details" showBack serviceType="cico">
-        <div className="max-w-lg mx-auto px-4">
-          <Card className="shadow-lg border border-outline bg-surface text-brand">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-lg">Customer Verification</CardTitle>
-              <CardDescription className="text-sm">
+      <Layout
+        title={`${selectedWallet?.name} - Select Method`}
+        showBack
+        serviceType='cico'
+      >
+        <div className='max-w-lg mx-auto px-4'>
+          <Card className='shadow-lg border-surface bg-surface text-brand'>
+            <CardHeader className='pb-4'>
+              <CardTitle className='text-lg'>
+                Select Transaction Method
+              </CardTitle>
+              <CardDescription className='text-sm'>
+                Choose how you want to process this transaction
+              </CardDescription>
+            </CardHeader>
+            <CardContent className='space-y-3'>
+              <Button
+                onClick={() => handleMethodSelection('normal')}
+                className='w-full h-12 text-left justify-start'
+              >
+                <div>
+                  <div className='font-medium'>Normal Transaction</div>
+                  <div className='text-xs opacity-90'>
+                    Phone number (+ optional PIN)
+                  </div>
+                </div>
+              </Button>
+              <Button
+                onClick={() => handleMethodSelection('voucher')}
+                variant='outline'
+                className='w-full h-12 border-gray-300 text-left justify-start'
+              >
+                <div>
+                  <div className='font-medium'>Voucher Transaction</div>
+                  <div className='text-xs text-gray-600'>Voucher code only</div>
+                </div>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
+    )
+  }
+
+  // KYC Confirmation Step
+  if (step === 'kyc' && customerData) {
+    return (
+      <Layout title='Confirm Customer Details' showBack serviceType='cico'>
+        <div className='max-w-lg mx-auto px-4'>
+          <Card className='shadow-lg border-surface bg-surface text-brand'>
+            <CardHeader className='pb-4'>
+              <CardTitle className='text-lg'>Customer Verification</CardTitle>
+              <CardDescription className='text-sm'>
                 Confirm customer details before processing
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="rounded-lg p-4">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className='space-y-4'>
+                <div className='rounded-lg p-4'>
+                  <div className='grid grid-cols-2 gap-3 text-sm'>
+                    {agent && (
+                      <div>
+                        <p className='text-gray-400'>Customer Name</p>
+                        <p className='font-semibold'>
+                          {agent.full_name ?? agent.username}
+                        </p>
+                      </div>
+                    )}
                     <div>
-                      <p className="text-gray-400">Customer Name</p>
-                      <p className="font-medium">{customerData.name}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400">Phone Number</p>
-                      <p className="font-medium">{customerData.phone}</p>
+                      <p className='text-gray-400'>Phone Number</p>
+                      <p className='font-medium'>{customerData.phone}</p>
                     </div>
 
                     <div>
-                      <p className="text-gray-400">KYC Status</p>
-                      <p className="font-medium text-green-600">
+                      <p className='text-gray-400'>KYC Status</p>
+                      <p className='font-medium text-green-600'>
                         {customerData.kycStatus}
                       </p>
                     </div>
-
                     <div>
-                      <p className="text-sm text-gray-400 mb-1">
+                      <p className='text-sm text-gray-400 mb-1'>
                         Transaction Amount
                       </p>
-                      <p className="font-medium text-blue-600">
+                      <p className='font-medium text-blue-600'>
                         {formatCurrency(formData.amount)}
                       </p>
                     </div>
+
+                    {agent && (
+                      <div className='col-span-2'>
+                        <p className='text-gray-400'>Agent</p>
+                        <p className='font-semibold'>
+                          {agent.full_name ?? agent.username}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <Button
                   onClick={handleKYCConfirm}
-                  className="w-full h-12 button"
-                  variant={"outline"}
+                  className='w-full h-12 button'
+                  variant={'outline'}
                 >
-                  {selectedWallet?.requiresPin
-                    ? "Confirm & Send PIN Request"
-                    : "Confirm & Process Transaction"}
+                  Confirm & Send PIN Request
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       </Layout>
-    );
+    )
   }
 
   // Processing Step
-  if (step === "processing") {
+  if (step === 'processing') {
     return (
-      <Layout title="Processing Transaction" serviceType="cico">
-        <div className="max-w-lg mx-auto px-4">
-          <Card className="shadow-lg border-outline bg-surface text-brand">
-            <CardContent className="pt-8 pb-8 text-center">
-              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <h2 className="text-lg font-bold mb-2">
-                {selectedWallet?.requiresPin
-                  ? "Waiting for Customer PIN"
-                  : "Processing Transaction"}
+      <Layout title='Processing Transaction' serviceType='cico'>
+        <div className='max-w-lg mx-auto px-4'>
+          <Card className='shadow-lg border-surface bg-surface text-brand'>
+            <CardContent className='pt-8 pb-8 text-center'>
+              <div className='w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4'></div>
+              <h2 className='text-lg font-bold mb-2'>
+                {selectedWallet?.requiresKYC
+                  ? 'Waiting for Customer PIN'
+                  : 'Processing Transaction'}
               </h2>
-              <p className="text-sm text-gray-400">
-                {selectedWallet?.requiresPin
-                  ? "Customer will enter PIN on their device..."
-                  : "Please wait while we process the transaction..."}
+              <p className='text-sm text-gray-500'>
+                {selectedWallet?.requiresKYC
+                  ? 'Customer will enter PIN on their device...'
+                  : 'Please wait while we process the transaction...'}
               </p>
             </CardContent>
           </Card>
         </div>
       </Layout>
-    );
+    )
   }
 
   // Complete Step
-  if (step === "complete") {
+  if (step === 'complete') {
     return (
-      <Layout title="Transaction Complete" serviceType="cico">
-        <div className="max-w-lg mx-auto px-4">
-          <Card className="shadow-lg border-outline bg-surface text-brand">
-            <CardContent className="pt-8 pb-6">
-              <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-white text-2xl">✓</span>
+      <Layout title='Transaction Complete' serviceType='cico'>
+        <div className='max-w-lg mx-auto px-4'>
+          <Card className='shadow-lg border-surface bg-surface text-brand'>
+            <CardContent className='pt-8 pb-6'>
+              <div className='text-center mb-6'>
+                <div className='w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4'>
+                  <span className='text-white text-2xl'>✓</span>
                 </div>
-                <h2 className="text-xl font-bold mb-2">
+                <h2 className='text-xl font-bold mb-2'>
                   Transaction Successful!
                 </h2>
-                <p className="text-sm text-gray-400">
+                <p className='text-sm text-gray-400'>
                   Cash-in of {formatCurrency(formData.amount)} completed
                 </p>
               </div>
 
-              <div className="rounded-lg p-4 mb-6">
-                <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className='rounded-lg p-4 mb-6'>
+                <div className='grid grid-cols-2 gap-3 text-sm'>
                   <div>
-                    <p className="text-gray-400">Transaction ID</p>
-                    <p className="font-mono font-semibold text-xs">
-                      TXN{Date.now().toString().slice(-8)}
+                    <p className='text-gray-400'>Transaction ID</p>
+                    <p className='font-mono font-semibold text-xs'>
+                      {lastTransactionId ??
+                        `TXN${Date.now().toString().slice(-8)}`}
                     </p>
                   </div>
                   <div>
-                    <p className="text-gray-400">Your Balance</p>
-                    <p className="font-semibold">
+                    <p className='text-gray-400'>Your Balance</p>
+                    <p className='font-semibold'>
                       {formatCurrency(agentBalance)}
                     </p>
                   </div>
                   {customerData && (
-                    <div className="col-span-2">
-                      <p className="text-gray-400">Customer</p>
-                      <p className="font-semibold">{customerData.name}</p>
+                    <div className='col-span-2'>
+                      <p className='text-gray-400'>Customer</p>
+                      <p className='font-semibold'>{customerData.name}</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="space-y-2">
+              <div className='space-y-2'>
                 <Button
-                  onClick={() => navigate("/distributor/cico")}
-                  className="w-full button"
-                  variant={"outline"}
+                  onClick={() => navigate('/distributor/cico')}
+                  className='w-full button'
+                  variant={'outline'}
                 >
                   New Transaction
                 </Button>
                 <Button
-                  variant="outline"
-                  onClick={() => navigate("/services")}
-                  className="w-full border-gray-300"
+                  variant='outline'
+                  onClick={() => navigate('/services')}
+                  className='w-full border-gray-300'
                 >
-                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  <ArrowLeft className='w-4 h-4 mr-2' />
                   Back to Dashboard
                 </Button>
               </div>
@@ -403,17 +573,30 @@ const CashIn: React.FC = () => {
           </Card>
         </div>
       </Layout>
-    );
+    )
   }
 
+  // Main Transaction Form
   return (
-    <Layout title={`Cash-In - ${selectedWallet?.name}`} showBack serviceType="cico">
-      <div className="max-w-lg mx-auto px-4 h-full overflow-y-auto">
-        <Card className="shadow-lg border-outline bg-surface text-brand">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Cash-In Transaction</CardTitle>
-            <CardDescription className="text-sm">
-              Enter customer details
+    <Layout
+      title={`${selectedWallet?.name} - ${
+        selectedMethod === 'voucher' ? 'Voucher' : 'Cash-In'
+      }`}
+      showBack
+      serviceType='cico'
+    >
+      <div className='max-w-lg mx-auto px-4 h-full overflow-y-auto'>
+        <Card className='shadow-lg border-surface bg-surface text-brand border-outline'>
+          <CardHeader className='pb-4'>
+            <CardTitle className='text-lg'>
+              {selectedMethod === 'voucher'
+                ? 'Voucher Cash-In'
+                : 'Cash-In Transaction'}
+            </CardTitle>
+            <CardDescription className='text-sm'>
+              {selectedMethod === 'voucher'
+                ? 'Enter voucher details'
+                : 'Enter customer details'}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -423,45 +606,68 @@ const CashIn: React.FC = () => {
                   ? handleKYCLookup
                   : handleDirectTransaction
               }
-              className="space-y-4"
+              className='space-y-4'
             >
               {/* Agent Balance */}
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs text-gray-400 mb-1">Your Balance</p>
-                <p className="text-lg font-bold text-blue-600">
+              <div className='bg-blue-50 rounded-lg p-3'>
+                <p className='text-xs text-gray-400 mb-1'>Your Balance</p>
+                <p className='text-lg font-bold text-blue-600'>
                   {formatCurrency(agentBalance)}
                 </p>
               </div>
 
               {/* Form Fields */}
-              {!selectedWallet?.fields.includes("voucherNumber") && (
-                <div className="space-y-2">
-                  <Label htmlFor="msidn" className="text-sm">
+              {selectedMethod !== 'voucher' && (
+                <div className='space-y-2'>
+                  <Label htmlFor='msidn' className='text-sm'>
                     Customer Phone
                   </Label>
                   <Input
-                    id="msidn"
-                    type="tel"
-                    placeholder="76123456"
+                    id='msidn'
+                    type='tel'
+                    placeholder='76123456'
                     value={formData.msidn}
                     onChange={(e) =>
                       setFormData({ ...formData, msidn: e.target.value })
                     }
-                    className="border-gray-300 h-10"
+                    className='border-gray-300 h-10'
                     required
                   />
                 </div>
               )}
 
-              {selectedWallet?.fields.includes("voucherNumber") && (
-                <div className="space-y-2">
-                  <Label htmlFor="voucherNumber" className="text-sm">
+              {selectedWallet?.requiresPin && selectedMethod !== 'voucher' && (
+                <div className='space-y-2'>
+                  <Label htmlFor='pin' className='text-sm'>
+                    Customer PIN
+                  </Label>
+                  <Input
+                    id='pin'
+                    type='password'
+                    placeholder='••••'
+                    maxLength={4}
+                    value={formData.pin}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        pin: e.target.value.replace(/\D/g, ''),
+                      })
+                    }
+                    className='border-gray-300 h-10'
+                    required
+                  />
+                </div>
+              )}
+
+              {selectedMethod === 'voucher' && (
+                <div className='space-y-2'>
+                  <Label htmlFor='voucherNumber' className='text-sm'>
                     Voucher Number
                   </Label>
                   <Input
-                    id="voucherNumber"
-                    type="text"
-                    placeholder="Enter voucher number"
+                    id='voucherNumber'
+                    type='text'
+                    placeholder='Enter voucher number'
                     value={formData.voucherNumber}
                     onChange={(e) =>
                       setFormData({
@@ -469,49 +675,43 @@ const CashIn: React.FC = () => {
                         voucherNumber: e.target.value,
                       })
                     }
-                    className="border-gray-300 h-10"
+                    className='border-gray-300 h-10'
                     required
                   />
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="amount" className="text-sm">
+              <div className='space-y-2'>
+                <Label htmlFor='amount' className='text-sm'>
                   Amount (SZL)
                 </Label>
                 <Input
-                  id="amount"
-                  type="number"
-                  placeholder="0.00"
-                  step="0.01"
-                  min="1"
+                  id='amount'
+                  type='number'
+                  placeholder='0.00'
+                  step='0.01'
+                  min='1'
                   value={formData.amount}
                   onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      amount: e.target.value,
-                    })
+                    setFormData({ ...formData, amount: e.target.value })
                   }
-                  className="border-gray-300 h-10"
+                  className='border-gray-300 h-10'
                   required
                 />
               </div>
 
               {/* Quick Amounts */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className='grid grid-cols-4 gap-2'>
                 {selectedWallet?.quickAmounts.map((amount) => (
                   <Button
                     key={amount}
-                    type="button"
-                    variant="outline"
-                    size="sm"
+                    type='button'
+                    variant='outline'
+                    size='sm'
                     onClick={() =>
-                      setFormData({
-                        ...formData,
-                        amount: amount.toString(),
-                      })
+                      setFormData({ ...formData, amount: amount.toString() })
                     }
-                    className="border-gray-300 h-8 text-xs"
+                    className='border-gray-300 h-8 text-xs'
                   >
                     E{amount}
                   </Button>
@@ -519,23 +719,23 @@ const CashIn: React.FC = () => {
               </div>
 
               <Button
-                type="submit"
-                variant={"outline"}
-                className="w-full button h-10"
+                type='submit'
+                variant={'outline'}
+                className='w-full button h-10'
                 disabled={isLoading}
               >
                 {isLoading
-                  ? "Loading..."
+                  ? 'Loading...'
                   : selectedWallet?.requiresKYC
-                  ? "Verify Customer"
-                  : "Process Transaction"}
+                  ? 'Verify Customer'
+                  : 'Process Transaction'}
               </Button>
             </form>
           </CardContent>
         </Card>
       </div>
     </Layout>
-  );
-};
+  )
+}
 
-export default CashIn;
+export default CashIn

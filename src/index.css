@@ -1,25 +1,25 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-@import "tailwindcss";
-@import "tw-animate-css";
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
 @custom-variant dark (&:is(.dark *));
 
-[data-sidebar="sidebar"][data-mobile="true"] {
+[data-sidebar='sidebar'][data-mobile='true'] {
   background-color: #0a2463 !important;
 }
 
 @media (max-width: 768px) {
-  [data-sidebar="sidebar"][data-mobile="true"] {
+  [data-sidebar='sidebar'][data-mobile='true'] {
     background-color: #0a2463 !important;
   }
 }
 
 :root {
   /* 🖋️ Fonts */
-  --default-font: "Inter", "Poppins", system-ui, sans-serif;
-  --heading-font: "Poppins", sans-serif;
-  --nav-font: "Inter", sans-serif;
+  --default-font: 'Inter', 'Poppins', system-ui, sans-serif;
+  --heading-font: 'Poppins', sans-serif;
+  --nav-font: 'Inter', sans-serif;
 
   /* 🎨 Marketplace Theme Colors */
   --background-color: #012d5a;
@@ -201,6 +201,11 @@
 
   .bg-surface {
     background-color: var(--surface-color);
+  }
+
+  /* Small stat cards background (use marketplace background #012d5a) */
+  .bg-stat {
+    background-color: var(--background-color);
   }
 
   .text-brand {

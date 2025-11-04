@@ -89,17 +89,17 @@ const Layout: React.FC<LayoutProps> = ({
               <Button
                 variant='ghost'
                 onClick={handleHome}
-                className='text-gray-600 hover:text-gray-900 p-2'
+                className='hidden sm:flex text-gray-600 hover:text-gray-900 p-2'
                 title='Home'
               >
                 <Home className='h-4 w-4' />
               </Button>
 
-              {/* Mobile profile button (icon + text) - visible on xs screens */}
+              {/* Profile button - hidden on xs (moved to hamburger menu for small devices) */}
               <Button
                 variant='ghost'
                 onClick={goProfile}
-                className='sm:hidden flex items-center gap-2 text-gray-600 hover:text-gray-900 p-2'
+                className='hidden sm:flex flex items-center gap-2 text-gray-600 hover:text-gray-900 p-2'
                 title='User Profile'
               >
                 <User className='h-4 w-4' />

@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react'
 import axios from 'axios'
+import { AUTH_URL } from '../api/config'
 
 type ServiceType = 'daas' | 'cico'
 
@@ -13,7 +14,7 @@ interface Agent {
   fund_limit?: number
   phone_number: string
   username?: string
-
+  // ...other agent fields...
 }
 
 interface AuthContextType {
@@ -28,7 +29,7 @@ interface AuthContextType {
   setSelectedService: (service: ServiceType) => void
 }
 
-const AUTH_URL = 'https://api.agents.centurionbd.com'
+
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 

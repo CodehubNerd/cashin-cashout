@@ -17,6 +17,7 @@ import { ArrowLeft } from 'lucide-react'
 import React from 'react'
 import { WalletProvider, walletProviders } from '@/lib/wallets'
 import { useAuth } from '@/lib/AuthContext'
+import { AUTH_URL } from '../api/config'
 
 interface FormData {
   msidn: string
@@ -189,7 +190,7 @@ const CashOut: React.FC = () => {
       }
 
       const res = await axios.post(
-        'https://api.agents.centurionbd.com/v1/cico/agents/cash-out',
+        `${AUTH_URL}/v1/cico/agents/cash-out`,
         payload,
         {
           headers: {
@@ -219,12 +220,34 @@ const CashOut: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Cash-out failed:', error)
+
+      const serverData = error?.response?.data
+      let description =
+        error?.message || 'Unable to process cash-out transaction'
+
+      // Prefer explicit error fields returned by server
+      if (serverData) {
+        if (typeof serverData.error === 'string') {
+          description = serverData.error
+        } else if (typeof serverData.message === 'string') {
+          description = serverData.message
+        } else if (serverData.response?.Trailer?.DetailedDesc) {
+          description = serverData.response.Trailer.DetailedDesc
+        }
+
+        // Append useful context if available
+        const parts: string[] = []
+        if (serverData.code) parts.push(`Code: ${serverData.code}`)
+        if (typeof serverData.current_balance !== 'undefined')
+          parts.push(`Current: E ${serverData.current_balance}`)
+        if (typeof serverData.required_amount !== 'undefined')
+          parts.push(`Required: E ${serverData.required_amount}`)
+        if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
       toast({
         title: 'Transaction Failed',
-        description:
-          error?.response?.data?.message ||
-          error?.message ||
-          'Unable to process cash-out transaction',
+        description,
         variant: 'destructive',
       })
       setStep('transaction')
@@ -334,11 +357,34 @@ const CashOut: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Unayo Cash-out failed:', error)
+
+      const serverData = error?.response?.data
+      let description =
+        error?.message || 'Unable to process cash-out transaction'
+
+      if (serverData) {
+        // Unayo sometimes returns nested response.Trailer.DetailedDesc
+        if (serverData.response?.Trailer?.DetailedDesc) {
+          description = serverData.response.Trailer.DetailedDesc
+        } else if (typeof serverData.error === 'string') {
+          description = serverData.error
+        } else if (typeof serverData.message === 'string') {
+          description = serverData.message
+        }
+
+        const parts: string[] = []
+        // Unayo may embed code or body fields differently
+        if (serverData.code) parts.push(`Code: ${serverData.code}`)
+        if (serverData.response?.Body?.AmountRedeemed !== undefined)
+          parts.push(`Redeemed: E ${serverData.response.Body.AmountRedeemed}`)
+        if (typeof serverData.current_balance !== 'undefined')
+          parts.push(`Current: E ${serverData.current_balance}`)
+        if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
       toast({
         title: 'Transaction Failed',
-        description:
-          error.response?.data?.message ||
-          'Unable to process cash-out transaction',
+        description,
         variant: 'destructive',
       })
       setStep('transaction')

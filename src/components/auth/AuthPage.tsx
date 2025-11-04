@@ -16,8 +16,10 @@ import logoSun from '@/assets/logos/logo2.svg'
 import axios from 'axios'
 import { useAuth } from '@/lib/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '@/lib/use-toast'
+import { AUTH_URL } from '../../api/config'
 
-export const AUTH_URL = 'https://api.agents.centurionbd.com'
+
 
 export default function AuthPage() {
   const [phone, setPhone] = useState('')
@@ -26,6 +28,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const { login, sessionToken, loading: authLoading } = useAuth()
   const navigate = useNavigate()
+  const { toast } = useToast()
 
   if (authLoading) {
     return (
@@ -41,7 +44,11 @@ export default function AuthPage() {
 
   const handleSendOTP = async () => {
     if (!phone || phone.length < 8) {
-      alert('Please enter a valid phone number')
+      toast({
+        title: 'Invalid phone number',
+        description: 'Please enter a valid phone number',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -62,9 +69,16 @@ export default function AuthPage() {
       console.log(res)
 
       setStep('otp')
-      alert('OTP Sent')
+      toast({
+        title: 'OTP Sent',
+        description: 'A one-time code was sent to your phone.',
+      })
     } catch {
-      alert('Failed to send OTP')
+      toast({
+        title: 'Failed to send OTP',
+        description: 'Please try again later.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }
@@ -72,7 +86,11 @@ export default function AuthPage() {
 
   const handleVerifyOTP = async () => {
     if (!otp || otp.length !== 6) {
-      alert('Enter the 6-digit code sent to your phone')
+      toast({
+        title: 'Invalid code',
+        description: 'Enter the 6-digit code sent to your phone.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -81,11 +99,18 @@ export default function AuthPage() {
       // Use centralized login from AuthContext
       await login(phone, otp)
 
-      alert('OTP verified successfully')
+      toast({
+        title: 'Signed in',
+        description: 'OTP verified successfully.',
+      })
       navigate('/')
     } catch (err) {
       console.error(err)
-      alert('Login Failed')
+      toast({
+        title: 'Login failed',
+        description: 'Unable to sign in. Check the code and try again.',
+        variant: 'destructive',
+      })
     } finally {
       setLoading(false)
     }

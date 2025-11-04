@@ -12,6 +12,7 @@ import {
 import { Button } from '../components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { AUTH_URL } from '../api/config'
 
 type AgentResp = {
   success: boolean
@@ -68,7 +69,7 @@ type SummaryResp = {
   }
 }
 
-const API_BASE = 'https://api.agents.centurionbd.com'
+
 
 const Profile: React.FC = () => {
   const { sessionToken } = useAuth()
@@ -85,15 +86,15 @@ const Profile: React.FC = () => {
       'Content-Type': 'application/json',
     }
 
-    const p1 = axios.get<AgentResp>(`${API_BASE}/v1/cico/agents/me`, {
+    const p1 = axios.get<AgentResp>(`${AUTH_URL}/v1/cico/agents/me`, {
       headers,
     })
     const p2 = axios.get<TxnsResp>(
-      `${API_BASE}/v1/cico/agents/me/transactions?page=1&limit=10`,
+      `${AUTH_URL}/v1/cico/agents/me/transactions?page=1&limit=10`,
       { headers }
     )
     const p3 = axios.get<SummaryResp>(
-      `${API_BASE}/v1/cico/agents/me/summary/daily`,
+      `${AUTH_URL}/v1/cico/agents/me/summary/daily`,
       {
         headers,
       }
@@ -151,10 +152,15 @@ const Profile: React.FC = () => {
           </Button>
         </div>
 
-        <Card>
+        {/* Agent Profile Card - add bg-surface & border-outline and adjust text colors */}
+        <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
-            <CardTitle className='text-lg'>Agent Profile</CardTitle>
-            <CardDescription>Account details & summary</CardDescription>
+            <CardTitle className='text-form-title text-lg text-white'>
+              Agent Profile
+            </CardTitle>
+            <CardDescription className='text-secondary'>
+              Account details & summary
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -174,54 +180,54 @@ const Profile: React.FC = () => {
                       : (agent?.username ?? 'A').slice(0, 2).toUpperCase()}
                   </div>
                   <div className='flex-1'>
-                    <div className='text-sm text-gray-500'>Name</div>
-                    <div className='text-lg font-semibold'>
+                    <div className='text-sm text-secondary'>Name</div>
+                    <div className='text-lg font-semibold text-white'>
                       {agent?.full_name ?? agent?.username ?? '-'}
                     </div>
-                    <div className='text-sm text-gray-400'>
+                    <div className='text-sm text-secondary'>
                       {agent?.email ?? ''}
                     </div>
-                    <div className='text-xs text-gray-500 mt-2'>
+                    <div className='text-xs text-secondary mt-2'>
                       Phone: {agent?.phone_number ?? '-'}
                     </div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-xs text-gray-500'>Balance</div>
+                    <div className='text-xs text-secondary'>Balance</div>
                     <div className='text-lg font-semibold text-blue-600'>
                       {formatCurrency(agent?.current_balance)}
                     </div>
-                    <div className='text-xs text-gray-400 mt-1'>
+                    <div className='text-xs text-secondary mt-1'>
                       Limit {formatCurrency(agent?.fund_limit)}
                     </div>
                   </div>
                 </div>
 
                 <div className='mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4'>
-                  <div className='p-3 bg-surface rounded'>
-                    <div className='text-xs text-gray-500'>Total TXNS</div>
-                    <div className='font-semibold text-lg'>
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Total TXNS</div>
+                    <div className='font-semibold text-lg text-white'>
                       {agent?.total_transactions_count ?? '-'}
                     </div>
-                    <div className='text-xs text-gray-400'>All time</div>
+                    <div className='text-xs text-secondary'>All time</div>
                   </div>
 
-                  <div className='p-3 bg-surface rounded'>
-                    <div className='text-xs text-gray-500'>Last Login</div>
-                    <div className='font-semibold text-sm'>
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Last Login</div>
+                    <div className='font-semibold text-sm text-white'>
                       {formatDate(agent?.last_login_at)}
                     </div>
                   </div>
 
-                  <div className='p-3 bg-surface rounded'>
-                    <div className='text-xs text-gray-500'>Active</div>
-                    <div className='font-semibold text-sm'>
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Active</div>
+                    <div className='font-semibold text-sm text-white'>
                       {agent?.is_active ? 'Yes' : 'No'}
                     </div>
                   </div>
 
-                  <div className='p-3 bg-surface rounded'>
-                    <div className='text-xs text-gray-500'>Suspended</div>
-                    <div className='font-semibold text-sm'>
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Suspended</div>
+                    <div className='font-semibold text-sm text-white'>
                       {agent?.is_suspended ? 'Yes' : 'No'}
                     </div>
                   </div>
@@ -232,65 +238,71 @@ const Profile: React.FC = () => {
         </Card>
 
         {/* Daily Summary */}
-        <Card>
+        <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
-            <CardTitle>Daily Summary</CardTitle>
-            <CardDescription>Overview of today's activity</CardDescription>
+            <CardTitle className='text-form-title text-white'>
+              Daily Summary
+            </CardTitle>
+            <CardDescription className='text-secondary'>
+              Overview of today's activity
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className='py-4'>Loading summary...</div>
+              <div className='py-4 text-secondary'>Loading summary...</div>
             ) : summary ? (
               <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
-                <div className='p-3 bg-surface rounded'>
-                  <div className='text-xs text-gray-500'>Total TXNS</div>
-                  <div className='font-semibold text-lg'>
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Total TXNS</div>
+                  <div className='font-semibold text-lg text-white'>
                     {summary.total_transactions}
                   </div>
-                  <div className='text-xs text-gray-400'>
+                  <div className='text-xs text-secondary'>
                     {summary.total_volume
                       ? `Vol: E ${summary.total_volume.toFixed(2)}`
                       : ''}
                   </div>
                 </div>
 
-                <div className='p-3 bg-surface rounded'>
-                  <div className='text-xs text-gray-500'>Successful</div>
-                  <div className='font-semibold text-lg'>
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Successful</div>
+                  <div className='font-semibold text-lg text-white'>
                     {summary.successful_transactions}
                   </div>
-                  <div className='text-xs text-gray-400'>
+                  <div className='text-xs text-secondary'>
                     Failed {summary.failed_transactions}
                   </div>
                 </div>
 
-                <div className='p-3 bg-surface rounded'>
-                  <div className='text-xs text-gray-500'>Avg Amount</div>
-                  <div className='font-semibold text-lg'>
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Avg Amount</div>
+                  <div className='font-semibold text-lg text-white'>
                     E {summary.average_transaction_amount?.toFixed(2)}
                   </div>
-                  <div className='text-xs text-gray-400'>
+                  <div className='text-xs text-secondary'>
                     Current Balance {formatCurrency(summary.current_balance)}
                   </div>
                 </div>
               </div>
             ) : (
-              <div className='py-4'>No summary available</div>
+              <div className='py-4 text-secondary'>No summary available</div>
             )}
           </CardContent>
         </Card>
 
         {/* Recent Transactions */}
-        <Card>
+        <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
-            <CardDescription>
+            <CardTitle className='text-form-title text-white'>
+              Recent Transactions
+            </CardTitle>
+            <CardDescription className='text-secondary'>
               Latest activity (amount, type, party, time, status)
             </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className='py-4'>Loading transactions...</div>
+              <div className='py-4 text-secondary'>Loading transactions...</div>
             ) : txns && txns.length > 0 ? (
               <div className='space-y-2'>
                 {txns.map((t) => (
@@ -299,11 +311,11 @@ const Profile: React.FC = () => {
                     className='p-3 bg-surface rounded flex items-center justify-between'
                   >
                     <div>
-                      <div className='text-sm font-semibold'>
+                      <div className='text-sm font-semibold text-white'>
                         {t.transaction_type.toUpperCase()} • E{' '}
                         {t.amount.toFixed(2)}
                       </div>
-                      <div className='text-xs text-gray-500'>
+                      <div className='text-xs text-secondary'>
                         Party: {t.party_id}
                       </div>
                     </div>
@@ -317,7 +329,7 @@ const Profile: React.FC = () => {
                       >
                         {t.status}
                       </div>
-                      <div className='text-xs text-gray-400'>
+                      <div className='text-xs text-secondary'>
                         {formatDate(t.created_at)}
                       </div>
                     </div>
@@ -333,7 +345,7 @@ const Profile: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className='py-4'>No recent transactions</div>
+              <div className='py-4 text-secondary'>No recent transactions</div>
             )}
           </CardContent>
         </Card>
