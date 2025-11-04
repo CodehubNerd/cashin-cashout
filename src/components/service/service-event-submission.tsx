@@ -1,7 +1,6 @@
 import type React from "react";
 
 import { useState, useRef } from "react";
-import { useAuth } from "@/lib/AuthContext";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
