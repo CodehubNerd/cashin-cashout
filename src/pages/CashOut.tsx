@@ -64,7 +64,7 @@ interface UnayoCashOutResponse {
 }
 
 const CashOut: React.FC = () => {
-  const { sessionToken, agent } = useAuth()
+  const { sessionToken, agent, updateAgent } = useAuth()
   const [step, setStep] = React.useState<
     'method' | 'transaction' | 'kyc' | 'processing' | 'complete'
   >('method')
@@ -113,6 +113,13 @@ const CashOut: React.FC = () => {
       navigate('/selection')
     }
   }, [navigate, agent])
+
+  // Keep local balance in sync with profile
+  React.useEffect(() => {
+    if (typeof agent?.current_balance === 'number') {
+      setAgentBalance(agent.current_balance)
+    }
+  }, [agent?.current_balance])
 
   const handleMethodSelection = (method: 'normal' | 'voucher') => {
     setSelectedMethod(method)
@@ -247,7 +254,7 @@ const CashOut: React.FC = () => {
       }
 
       const res = await axios.post(
-        `${AUTH_URL}/v1/cico/agents/cash-out`,
+        `${AUTH_URL}/v1/cico/agents/cash-out/with-status?timeout=5`,
         payload,
         {
           headers: {
@@ -261,12 +268,15 @@ const CashOut: React.FC = () => {
       if (resp?.success && resp?.data) {
         const txId = resp.data.transaction_id
         const balanceAfter = resp.data.balance_after
-        setLastTransactionId(txId ?? null)
-        setAgentBalance(
+        const newBalance =
           typeof balanceAfter === 'number'
             ? balanceAfter
             : agentBalance - parseFloat(formData.withdrawAmount)
-        )
+        setLastTransactionId(txId ?? null)
+        setAgentBalance(newBalance)
+        if (agent && updateAgent) {
+          updateAgent({ ...agent, current_balance: newBalance })
+        }
         setStep('complete')
         toast({
           title: 'Transaction Successful',
@@ -398,11 +408,15 @@ const CashOut: React.FC = () => {
         response.status === 200 &&
         response.data.response.Trailer.StatusCode === 0
       ) {
+        const newBalance = agentBalance - amount
         setStep('complete')
-        setAgentBalance((prev) => prev - amount)
+        setAgentBalance(newBalance)
         setLastTransactionId(
           response.data.response.Body.UniqueTransactionId ?? null
         )
+        if (agent && updateAgent) {
+          updateAgent({ ...agent, current_balance: newBalance })
+        }
         toast({
           title: 'Transaction Successful',
           description: `Cash-out of E ${formData.withdrawAmount} completed`,
@@ -538,7 +552,6 @@ const CashOut: React.FC = () => {
                       <p className='text-gray-400'>Phone Number</p>
                       <p className='font-medium'>{customerData.phone}</p>
                     </div>
-                
 
                     <div>
                       <p className='text-sm text-gray-400 mb-1'>

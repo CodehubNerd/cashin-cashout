@@ -68,7 +68,7 @@ interface UnayoApiResponse {
 
 // CashIn Component (rewritten to mirror CashOut flow)
 const CashIn: React.FC = () => {
-  const { sessionToken, agent } = useAuth()
+  const { sessionToken, agent, updateAgent } = useAuth()
   const [step, setStep] = React.useState<
     'method' | 'transaction' | 'kyc' | 'processing' | 'complete'
   >('method')
@@ -103,8 +103,7 @@ const CashIn: React.FC = () => {
     const wallet = walletProviders.find((w) => w.name === walletName)
     if (wallet) {
       setSelectedWallet(wallet)
-      const realBalance =
-        agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
+      const realBalance = agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
       setAgentBalance(realBalance)
 
       // Skip method selection if wallet only supports one method
@@ -116,6 +115,13 @@ const CashIn: React.FC = () => {
       navigate('/selection')
     }
   }, [navigate, agent])
+
+  // Keep local agentBalance in sync with AuthContext agent.current_balance
+  React.useEffect(() => {
+    if (typeof agent?.current_balance === 'number') {
+      setAgentBalance(agent.current_balance)
+    }
+  }, [agent?.current_balance])
 
   const handleMethodSelection = (method: 'normal' | 'voucher') => {
     setSelectedMethod(method)
@@ -245,7 +251,7 @@ const CashIn: React.FC = () => {
       }
 
       const res = await axios.post(
-        `${AUTH_URL}/v1/cico/agents/cash-in`,
+        `${AUTH_URL}/v1/cico/agents/cash-in/with-status?timeout=5`,
         payload,
         {
           headers: {
@@ -260,11 +266,15 @@ const CashIn: React.FC = () => {
         const txId = resp.data.transaction_id
         const balanceAfter = resp.data.balance_after
         setLastTransactionId(txId ?? null)
-        setAgentBalance(
+        const newBalance =
           typeof balanceAfter === 'number'
             ? balanceAfter
             : agentBalance + parseFloat(formData.amount)
-        )
+        setAgentBalance(newBalance)
+        // update global agent so Profile and other pages reflect new balance
+        if (agent && updateAgent) {
+          updateAgent({ ...agent, current_balance: newBalance })
+        }
         setStep('complete')
         toast({
           title: 'Transaction Successful',
@@ -374,7 +384,11 @@ const CashIn: React.FC = () => {
       ) {
         const amountRedeemed = response.data.response.Body.AmountRedeemed
         setStep('complete')
-        setAgentBalance((prev) => prev + amountRedeemed)
+        const newBalance = agentBalance + amountRedeemed
+        setAgentBalance(newBalance)
+        if (agent && updateAgent) {
+          updateAgent({ ...agent, current_balance: newBalance })
+        }
         setLastTransactionId(
           response.data.response.Body.UniqueTransactionId ?? null
         )

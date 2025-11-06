@@ -27,9 +27,8 @@ interface AuthContextType {
   login: (phone: string, otp: string) => Promise<void>
   logout: () => void
   setSelectedService: (service: ServiceType) => void
+  updateAgent?: (agent: Agent) => void // <-- add optional here for backward compatibility
 }
-
-
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
@@ -113,6 +112,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setSelectedServiceState(service)
   }
 
+  // Add updateAgent to keep agent state + sessionStorage in sync
+  const updateAgent = (updatedAgent: Agent) => {
+    try {
+      sessionStorage.setItem('agent', JSON.stringify(updatedAgent))
+    } catch {
+      // ignore storage failures
+    }
+    setAgent(updatedAgent)
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -125,6 +134,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         login,
         logout,
         setSelectedService,
+        updateAgent, // <-- expose it
       }}
     >
       {children}
