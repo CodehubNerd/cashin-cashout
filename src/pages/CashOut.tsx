@@ -553,14 +553,7 @@ const CashOut: React.FC = () => {
                       <p className='font-medium'>{customerData.phone}</p>
                     </div>
 
-                    <div>
-                      <p className='text-sm text-gray-400 mb-1'>
-                        Subject (sub)
-                      </p>
-                      <p className='font-medium text-blue-600'>
-                        {customerInfo?.sub ?? 'N/A'}
-                      </p>
-                    </div>
+                   
                     <div>
                       <p className='text-sm text-gray-400 mb-1'>
                         Transaction Amount

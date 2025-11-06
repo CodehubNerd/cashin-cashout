@@ -223,62 +223,10 @@ const TransactionHistory = () => {
   return (
     <Layout title='Transaction History' showBack serviceType='cico'>
       <div className='space-y-6'>
-        {/* Summary Cards - 2x2 grid on mobile, 4 columns on desktop */}
-        <div className='grid grid-cols-2 lg:grid-cols-4 gap-4'>
-          <Card className='border-none shadow-lg'>
-            <CardContent className='pt-4 pb-4'>
-              <div className='text-center'>
-                <p className='text-xl lg:text-2xl font-bold text-primary'>
-                  {filteredTransactions.length}
-                </p>
-                <p className='text-xs lg:text-sm text-gray-600'>
-                  Total Transactions
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className='border-none shadow-lg'>
-            <CardContent className='pt-4 pb-4'>
-              <div className='text-center'>
-                <p className='text-xl lg:text-2xl font-bold text-green-600'>
-                  {
-                    filteredTransactions.filter((t) => t.status === 'Success')
-                      .length
-                  }
-                </p>
-                <p className='text-xs lg:text-sm text-gray-600'>Successful</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className='border-none shadow-lg'>
-            <CardContent className='pt-4 pb-4'>
-              <div className='text-center'>
-                <p className='text-xl lg:text-2xl font-bold text-red-600'>
-                  {
-                    filteredTransactions.filter((t) => t.status === 'Failed')
-                      .length
-                  }
-                </p>
-                <p className='text-xs lg:text-sm text-gray-600'>Failed</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className='border-none shadow-lg'>
-            <CardContent className='pt-4 pb-4'>
-              <div className='text-center'>
-                <p className='text-lg lg:text-2xl font-medium text-accent'>
-                  {formatCurrency(totalCommission)}
-                </p>
-                <p className='text-xs lg:text-sm text-gray-600'>
-                  Total Commission
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* summary stats removed */}
 
         {/* Filters */}
-        <Card className='shadow-lg border-none'>
+        <Card className='shadow-lg bg-stat border-outline'>
           <CardHeader className='pb-4'>
             <CardTitle className='text-lg'>Filter Transactions</CardTitle>
             <CardDescription>
@@ -369,7 +317,7 @@ const TransactionHistory = () => {
         </Card>
 
         {/* Transaction List */}
-        <Card className='shadow-lg border-gray-300'>
+        <Card className='shadow-lg bg-stat border-outline'>
           <CardHeader className='pb-4'>
             <CardTitle className='text-lg'>Transaction List</CardTitle>
             <CardDescription>
@@ -382,7 +330,7 @@ const TransactionHistory = () => {
               {filteredTransactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className='bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors cursor-pointer'
+                  className='bg-stat rounded-lg p-4 hover:opacity-90 transition-colors cursor-pointer'
                   onClick={() => setSelectedTransaction(transaction)}
                 >
                   {/* Mobile Layout */}

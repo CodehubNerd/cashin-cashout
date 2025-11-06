@@ -536,14 +536,6 @@ const CashIn: React.FC = () => {
 
                     <div>
                       <p className='text-sm text-gray-400 mb-1'>
-                        Subject (sub)
-                      </p>
-                      <p className='font-medium text-blue-600'>
-                        {customerInfo?.sub ?? 'N/A'}
-                      </p>
-                    </div>
-                    <div>
-                      <p className='text-sm text-gray-400 mb-1'>
                         Transaction Amount
                       </p>
                       <p className='font-medium text-blue-600'>
