@@ -259,4 +259,9 @@
     color: var(--secondary-text-color);
     font-family: var(--default-font);
   }
+
+  /* Pending status text should use --chart-5 */
+  .text-pending {
+    color: var(--chart-5) !important;
+  }
 }

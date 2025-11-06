@@ -69,8 +69,6 @@ type SummaryResp = {
   }
 }
 
-
-
 const Profile: React.FC = () => {
   const { sessionToken } = useAuth()
   const [agent, setAgent] = React.useState<AgentResp['data'] | null>(null)
@@ -322,8 +320,10 @@ const Profile: React.FC = () => {
                     <div className='text-right'>
                       <div
                         className={`text-xs font-medium ${
-                          t.status === 'successful'
+                          t.status?.toLowerCase() === 'successful'
                             ? 'text-green-600'
+                            : t.status?.toLowerCase() === 'pending'
+                            ? 'text-pending'
                             : 'text-red-600'
                         }`}
                       >
@@ -339,6 +339,7 @@ const Profile: React.FC = () => {
                   <Button
                     variant='outline'
                     onClick={() => navigate('/distributor/cico/history')}
+                    style={{ color: 'var(--accent-hover-color)' }}
                   >
                     View Full History
                   </Button>

@@ -103,7 +103,8 @@ const CashIn: React.FC = () => {
     const wallet = walletProviders.find((w) => w.name === walletName)
     if (wallet) {
       setSelectedWallet(wallet)
-      const realBalance = agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
+      const realBalance =
+        agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
       setAgentBalance(realBalance)
 
       // Skip method selection if wallet only supports one method
