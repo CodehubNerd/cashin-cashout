@@ -32,6 +32,12 @@ interface CustomerData {
   kycStatus: string
 }
 
+interface CustomerInfoBody {
+  given_name?: string
+  family_name?: string
+  sub?: number
+}
+
 interface UnayoResponseBody {
   AmountRedeemed: number
   AmountUnredeemed: number
@@ -74,6 +80,8 @@ const CashIn: React.FC = () => {
   const [customerData, setCustomerData] = React.useState<CustomerData | null>(
     null
   )
+  const [customerInfo, setCustomerInfo] =
+    React.useState<CustomerInfoBody | null>(null)
   const [agentBalance, setAgentBalance] = React.useState<number>(0)
   const [formData, setFormData] = React.useState<FormData>({
     msidn: '',
@@ -114,6 +122,14 @@ const CashIn: React.FC = () => {
     setStep('transaction')
   }
 
+  const formatPhoneForApi = (input: string) => {
+    const digits = (input || '').replace(/\D/g, '')
+    if (!digits) return ''
+    if (digits.startsWith('268')) return digits
+    if (digits.startsWith('0')) return `268${digits.slice(1)}`
+    return `268${digits}`
+  }
+
   const handleKYCLookup = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -136,23 +152,72 @@ const CashIn: React.FC = () => {
       return
     }
 
-    setIsLoading(true)
+    const apiPhone = formatPhoneForApi(formData.msidn)
+    if (!apiPhone) {
+      toast({
+        title: 'Invalid Phone',
+        description: 'Unable to format phone number',
+        variant: 'destructive',
+      })
+      return
+    }
 
-    // Simulate lookup but base displayed KYC on logged agent
-    setTimeout(() => {
-      const mockCustomer: CustomerData = {
-        name: 'Thembinkosi Mkhonta',
-        phone: formData.msidn,
-        balance: Math.floor(Math.random() * 5000) + 500,
-        kycStatus: agent ? 'Verified' : 'Verified',
+    setIsLoading(true)
+    setCustomerInfo(null)
+
+    try {
+      const res = await axios.post(
+        `${AUTH_URL}/v1/cico/agents/customer-info`,
+        { phone_number: apiPhone },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${sessionToken ?? ''}`,
+          },
+        }
+      )
+
+      const data = res.data
+      if (data?.success && data?.data?.body) {
+        const body = data.data.body as CustomerInfoBody
+        setCustomerInfo(body)
+        setCustomerData({
+          name:
+            `${body.given_name ?? ''} ${body.family_name ?? ''}`.trim() ||
+            'Unknown',
+          phone: apiPhone,
+          balance: 0,
+          kycStatus: 'Verified',
+        })
+        setIsLoading(false)
+        setStep('kyc')
+      } else {
+        throw new Error(
+          data?.error || data?.message || 'Customer lookup failed'
+        )
+      }
+    } catch (error: any) {
+      console.error('Customer lookup failed:', error)
+      const serverData = error?.response?.data
+      let description = error?.message || 'Unable to retrieve customer info'
+
+      if (serverData) {
+        if (typeof serverData.error === 'string') {
+          description = serverData.error
+        } else if (typeof serverData.message === 'string') {
+          description = serverData.message
+        } else if (serverData.details) {
+          description = serverData.details
+        }
       }
 
-      // Note: For cash-in agent balance isn't used to validate the customer's available money,
-      // but we still show the customer's mock balance and proceed.
-      setCustomerData(mockCustomer)
+      toast({
+        title: 'Lookup Failed',
+        description,
+        variant: 'destructive',
+      })
       setIsLoading(false)
-      setStep('kyc')
-    }, 1200)
+    }
   }
 
   const handleKYCConfirm = async () => {
@@ -430,23 +495,36 @@ const CashIn: React.FC = () => {
               <div className='space-y-4'>
                 <div className='rounded-lg p-4'>
                   <div className='grid grid-cols-2 gap-3 text-sm'>
-                    {agent && (
-                      <div>
-                        <p className='text-gray-400'>Customer Name</p>
-                        <p className='font-semibold'>
-                          {agent.full_name ?? agent.username}
-                        </p>
-                      </div>
-                    )}
+                    <div>
+                      <p className='text-gray-400'>Given Name</p>
+                      <p className='font-semibold'>
+                        {customerInfo?.given_name ?? customerData.name}
+                      </p>
+                    </div>
+                    <div>
+                      <p className='text-gray-400'>Family Name</p>
+                      <p className='font-medium'>
+                        {customerInfo?.family_name ?? ''}
+                      </p>
+                    </div>
+
                     <div>
                       <p className='text-gray-400'>Phone Number</p>
                       <p className='font-medium'>{customerData.phone}</p>
                     </div>
-
                     <div>
                       <p className='text-gray-400'>KYC Status</p>
                       <p className='font-medium text-green-600'>
                         {customerData.kycStatus}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className='text-sm text-gray-400 mb-1'>
+                        Subject (sub)
+                      </p>
+                      <p className='font-medium text-blue-600'>
+                        {customerInfo?.sub ?? 'N/A'}
                       </p>
                     </div>
                     <div>
