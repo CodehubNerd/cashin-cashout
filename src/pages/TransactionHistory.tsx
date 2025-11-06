@@ -206,9 +206,7 @@ const TransactionHistory = () => {
     return type === 'Cash-In' ? 'text-blue-600' : 'text-purple-600'
   }
 
-  const totalCommission = filteredTransactions
-    .filter((t) => t.status === 'Success')
-    .reduce((sum, t) => sum + t.commission, 0)
+
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
