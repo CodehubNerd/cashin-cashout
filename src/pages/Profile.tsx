@@ -87,7 +87,7 @@ const Profile: React.FC = () => {
     null
   )
 
-  // ✅ Persisted failure reasons (loaded from localStorage)
+  // persisted failure reasons (loaded from localStorage 'txnReasons')
   const [failureReasons, setFailureReasons] = React.useState<
     Record<string, string>
   >({})
@@ -143,6 +143,7 @@ const Profile: React.FC = () => {
           status_message: 'Unable to fetch transaction status',
         },
       }))
+      setLatestStatusId(transaction_id)
       setTimeout(() => {
         setStatusMessages((s) => {
           const copy = { ...s }
@@ -224,13 +225,147 @@ const Profile: React.FC = () => {
           </Button>
         </div>
 
-        {/* PROFILE CARD ... (unchanged) */}
+        <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
+          <CardHeader>
+            <CardTitle className='text-form-title text-lg text-white'>
+              Agent Profile
+            </CardTitle>
+            <CardDescription className='text-secondary'>
+              Account details & summary
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className='py-6 flex items-center justify-center'>
+                <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-accent' />
+              </div>
+            ) : (
+              <>
+                <div className='flex items-center gap-4'>
+                  <div className='h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xl'>
+                    {agent?.full_name
+                      ? agent.full_name
+                          .split(' ')
+                          .map((p) => p[0])
+                          .slice(0, 2)
+                          .join('')
+                      : (agent?.username ?? 'A').slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className='flex-1'>
+                    <div className='text-sm text-secondary'>Name</div>
+                    <div className='text-lg font-semibold text-white'>
+                      {agent?.full_name ?? agent?.username ?? '-'}
+                    </div>
+                    <div className='text-sm text-secondary'>
+                      {agent?.email ?? ''}
+                    </div>
+                    <div className='text-xs text-secondary mt-2'>
+                      Phone: {agent?.phone_number ?? '-'}
+                    </div>
+                  </div>
+                  <div className='text-right'>
+                    <div className='text-xs text-secondary'>Available</div>
+                    <div className='text-lg font-semibold text-blue-600'>
+                      {formatCurrency(
+                        agent?.available_balance ?? agent?.current_balance
+                      )}
+                    </div>
+                    <div className='text-xs text-secondary mt-1'>
+                      Current {formatCurrency(agent?.current_balance)} • Holds{' '}
+                      {formatCurrency(agent?.holds_balance)}
+                    </div>
+                    <div className='text-xs text-secondary mt-1'>
+                      Limit {formatCurrency(agent?.fund_limit)}
+                    </div>
+                  </div>
+                </div>
 
-        {/* Minimal hidden usage to satisfy TypeScript (prevents "declared but never read" errors).
-            This intentionally renders nothing visible but touches agent, summary and formatCurrency. */}
-        <div style={{ display: 'none' }} aria-hidden>
-          {agent ? `${formatCurrency(agent.available_balance)} ${summary?.total_transactions ?? ''}` : null}
-        </div>
+                <div className='mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4'>
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Total TXNS</div>
+                    <div className='font-semibold text-lg text-white'>
+                      {agent?.total_transactions_count ?? '-'}
+                    </div>
+                    <div className='text-xs text-secondary'>All time</div>
+                  </div>
+
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Last Login</div>
+                    <div className='font-semibold text-sm text-white'>
+                      {formatDate(agent?.last_login_at)}
+                    </div>
+                  </div>
+
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Active</div>
+                    <div className='font-semibold text-sm text-white'>
+                      {agent?.is_active ? 'Yes' : 'No'}
+                    </div>
+                  </div>
+
+                  <div className='p-3 bg-stat rounded'>
+                    <div className='text-xs text-secondary'>Suspended</div>
+                    <div className='font-semibold text-sm text-white'>
+                      {agent?.is_suspended ? 'Yes' : 'No'}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
+          <CardHeader>
+            <CardTitle className='text-form-title text-white'>
+              Daily Summary
+            </CardTitle>
+            <CardDescription className='text-secondary'>
+              Overview of today's activity
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className='py-4 text-secondary'>Loading summary...</div>
+            ) : summary ? (
+              <div className='grid grid-cols-1 sm:grid-cols-3 gap-3'>
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Total TXNS</div>
+                  <div className='font-semibold text-lg text-white'>
+                    {summary.total_transactions}
+                  </div>
+                  <div className='text-xs text-secondary'>
+                    {summary.total_volume
+                      ? `Vol: E ${summary.total_volume.toFixed(2)}`
+                      : ''}
+                  </div>
+                </div>
+
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Successful</div>
+                  <div className='font-semibold text-lg text-white'>
+                    {summary.successful_transactions}
+                  </div>
+                  <div className='text-xs text-secondary'>
+                    Failed {summary.failed_transactions}
+                  </div>
+                </div>
+
+                <div className='p-3 bg-stat rounded'>
+                  <div className='text-xs text-secondary'>Avg Amount</div>
+                  <div className='font-semibold text-lg text-white'>
+                    E {summary.average_transaction_amount?.toFixed(2)}
+                  </div>
+                  <div className='text-xs text-secondary'>
+                    Current Balance {formatCurrency(summary.current_balance)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className='py-4 text-secondary'>No summary available</div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
@@ -259,16 +394,7 @@ const Profile: React.FC = () => {
                       <div className='text-xs text-secondary'>
                         Party: {t.party_id}
                       </div>
-
-                      {/* ✅ ADDED: Show stored failure reason if failed */}
-                      {t.status?.toLowerCase() === 'failed' &&
-                        failureReasons[t.transaction_id] && (
-                          <div className='text-xs text-red-400 mt-1'>
-                            Reason: {failureReasons[t.transaction_id]}
-                          </div>
-                        )}
                     </div>
-
                     <div className='text-right'>
                       <div
                         className={`text-xs font-medium ${
@@ -284,8 +410,7 @@ const Profile: React.FC = () => {
                       <div className='text-xs text-secondary'>
                         {formatDate(t.created_at)}
                       </div>
-
-                      {t.status?.toLowerCase() === 'pending' && (
+                      {t.status && t.status.toLowerCase() === 'pending' && (
                         <div className='mt-2'>
                           <Button
                             variant='ghost'
@@ -299,7 +424,6 @@ const Profile: React.FC = () => {
                     </div>
                   </div>
                 ))}
-
                 <div className='pt-2'>
                   <Button
                     variant='outline'
@@ -317,7 +441,7 @@ const Profile: React.FC = () => {
         </Card>
       </div>
 
-      {/* Status banner unchanged */}
+      {/* Full-width fixed banner for latest status message */}
       {latestStatusId && statusMessages[latestStatusId] && (
         <div className='fixed left-0 right-0 top-16 z-50 px-4'>
           <div className='w-full bg-white/95 text-gray-800 shadow-md py-3'>
