@@ -63,6 +63,24 @@ interface UnayoCashOutResponse {
   }
 }
 
+const saveTxnReason = (
+  transactionId: string | null | undefined,
+  reason: string | null | undefined
+) => {
+  // store mapping txnId -> reason in localStorage so profile/history can show it
+  if (!transactionId || !reason) return
+  try {
+    const key = 'txnReasons'
+    const raw = localStorage.getItem(key) ?? '{}'
+    const map = JSON.parse(raw) as Record<string, string>
+    map[transactionId] = reason
+    localStorage.setItem(key, JSON.stringify(map))
+  } catch (e) {
+    // ignore localStorage errors
+    console.error('saveTxnReason error', e)
+  }
+}
+
 const CashOut: React.FC = () => {
   const { sessionToken, agent, updateAgent } = useAuth()
   const [step, setStep] = React.useState<
@@ -99,10 +117,14 @@ const CashOut: React.FC = () => {
     const wallet = walletProviders.find((w) => w.name === walletName)
     if (wallet) {
       setSelectedWallet(wallet)
-      // Use real agent balance when available
-      const realBalance =
-        agent?.current_balance ?? Math.floor(Math.random() * 10000) + 2000
-      setAgentBalance(realBalance)
+      // Use available_balance for agent balance when available
+      const realAvailable =
+        typeof agent?.available_balance === 'number'
+          ? agent.available_balance
+          : typeof agent?.current_balance === 'number'
+          ? agent.current_balance
+          : Math.floor(Math.random() * 10000) + 2000
+      setAgentBalance(realAvailable)
 
       // Skip method selection if wallet only supports one method
       if (wallet.supportedMethods?.length === 1) {
@@ -114,12 +136,15 @@ const CashOut: React.FC = () => {
     }
   }, [navigate, agent])
 
-  // Keep local balance in sync with profile
+  // Keep local balance in sync with profile (use available_balance)
   React.useEffect(() => {
-    if (typeof agent?.current_balance === 'number') {
+    if (typeof agent?.available_balance === 'number') {
+      setAgentBalance(agent.available_balance)
+    } else if (typeof agent?.current_balance === 'number') {
+      // fallback to current if available not provided
       setAgentBalance(agent.current_balance)
     }
-  }, [agent?.current_balance])
+  }, [agent?.available_balance, agent?.current_balance])
 
   const handleMethodSelection = (method: 'normal' | 'voucher') => {
     setSelectedMethod(method)
@@ -254,7 +279,7 @@ const CashOut: React.FC = () => {
       }
 
       const res = await axios.post(
-        `${AUTH_URL}/v1/cico/agents/cash-out/with-status?timeout=5`,
+        `${AUTH_URL}/v1/cico/agents/cash-out/with-status?timeout=120`,
         payload,
         {
           headers: {
@@ -265,17 +290,59 @@ const CashOut: React.FC = () => {
       )
 
       const resp = res.data
+
+      // NEW: when server returns success:false but includes data, capture reason if present
+      if (!resp?.success && resp?.data) {
+        const txId = resp.data.transaction_id ?? resp.data.transactionId ?? null
+        const reason =
+          resp.data?.momo_response?.body?.reason ??
+          resp.data?.reason ??
+          resp.message ??
+          null
+        if (txId && reason) {
+          saveTxnReason(txId, String(reason))
+          // SHOW reason immediately via toast for agent visibility
+          toast({
+            title: 'Transaction Failed',
+            description: String(reason),
+            variant: 'destructive',
+          })
+        }
+      }
+
       if (resp?.success && resp?.data) {
         const txId = resp.data.transaction_id
-        const balanceAfter = resp.data.balance_after
-        const newBalance =
-          typeof balanceAfter === 'number'
-            ? balanceAfter
-            : agentBalance - parseFloat(formData.withdrawAmount)
+
+        // Prefer server provided available_balance, then balance_after, then fallback compute
+        const serverAvailable =
+          typeof resp.data.available_balance === 'number'
+            ? resp.data.available_balance
+            : typeof resp.data.balance_after === 'number'
+            ? resp.data.balance_after
+            : undefined
+
+        const amount = parseFloat(formData.withdrawAmount)
+        const newAvailable =
+          typeof serverAvailable === 'number'
+            ? serverAvailable
+            : Math.max(0, (agent?.available_balance ?? agentBalance) - amount)
+
         setLastTransactionId(txId ?? null)
-        setAgentBalance(newBalance)
+        setAgentBalance(newAvailable)
+
         if (agent && updateAgent) {
-          updateAgent({ ...agent, current_balance: newBalance })
+          const updatedAgent = {
+            ...agent,
+            // update both balances if possible; prefer server values when provided
+            current_balance:
+              typeof resp.data.current_balance === 'number'
+                ? resp.data.current_balance
+                : typeof resp.data.balance_after === 'number'
+                ? resp.data.balance_after
+                : (agent.current_balance ?? agentBalance) - amount,
+            available_balance: newAvailable,
+          }
+          updateAgent(updatedAgent)
         }
         setStep('complete')
         toast({
@@ -283,6 +350,7 @@ const CashOut: React.FC = () => {
           description: `Cash-out of E ${formData.withdrawAmount} completed`,
         })
       } else {
+        // throw to enter catch block and show toast as before
         throw new Error(resp?.message || 'Cash-out failed')
       }
     } catch (error: any) {
@@ -310,6 +378,23 @@ const CashOut: React.FC = () => {
         if (typeof serverData.required_amount !== 'undefined')
           parts.push(`Required: E ${serverData.required_amount}`)
         if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
+      // Attempt to persist reason if available on error.response.data (fallback)
+      const txId =
+        serverData?.data?.transaction_id ?? serverData?.transaction_id ?? null
+      const reason =
+        serverData?.data?.momo_response?.body?.reason ??
+        serverData?.data?.reason ??
+        serverData?.message ??
+        null
+      if (txId && reason) {
+        saveTxnReason(txId, String(reason))
+        toast({
+          title: 'Transaction Failed',
+          description: String(reason),
+          variant: 'destructive',
+        })
       }
 
       toast({
@@ -415,13 +500,34 @@ const CashOut: React.FC = () => {
           response.data.response.Body.UniqueTransactionId ?? null
         )
         if (agent && updateAgent) {
-          updateAgent({ ...agent, current_balance: newBalance })
+          // Update both current and available balances for consistency (available used for validation)
+          updateAgent({
+            ...agent,
+            current_balance:
+              typeof response.data.response.Body?.AmountUnredeemed === 'number'
+                ? // if API returns an updated current balance in a different field, prefer server values
+                  agent.current_balance
+                : newBalance,
+            available_balance: newBalance,
+          })
         }
         toast({
           title: 'Transaction Successful',
           description: `Cash-out of E ${formData.withdrawAmount} completed`,
         })
       } else {
+        const txId = response.data.response.Body.UniqueTransactionId ?? null
+        const reason =
+          response.data.response.Trailer.DetailedDesc ?? 'Transaction failed'
+        if (txId && reason) {
+          saveTxnReason(txId, String(reason))
+          // SHOW reason immediately via toast for agent visibility
+          toast({
+            title: 'Transaction Failed',
+            description: String(reason),
+            variant: 'destructive',
+          })
+        }
         throw new Error(
           response.data.response.Trailer.DetailedDesc || 'Transaction failed'
         )
@@ -451,6 +557,18 @@ const CashOut: React.FC = () => {
         if (typeof serverData.current_balance !== 'undefined')
           parts.push(`Current: E ${serverData.current_balance}`)
         if (parts.length) description += ` (${parts.join(', ')})`
+      }
+
+      const txId = serverData?.response?.Body?.UniqueTransactionId ?? null
+      const reason =
+        serverData?.response?.Trailer?.DetailedDesc ?? 'Transaction failed'
+      if (txId && reason) {
+        saveTxnReason(txId, String(reason))
+        toast({
+          title: 'Transaction Failed',
+          description: String(reason),
+          variant: 'destructive',
+        })
       }
 
       toast({
@@ -553,7 +671,6 @@ const CashOut: React.FC = () => {
                       <p className='font-medium'>{customerData.phone}</p>
                     </div>
 
-                   
                     <div>
                       <p className='text-sm text-gray-400 mb-1'>
                         Transaction Amount
@@ -716,10 +833,14 @@ const CashOut: React.FC = () => {
             >
               {/* Agent Balance */}
               <div className='bg-blue-50 rounded-lg p-3'>
-                <p className='text-xs text-gray-600 mb-1'>Your Balance</p>
+                <p className='text-xs text-gray-600 mb-1'>Available Balance</p>
                 <p className='text-lg font-bold text-blue-600'>
                   {formatCurrency(agentBalance)}
                 </p>
+                <div className='text-xs text-gray-500 mt-1'>
+                  Current {formatCurrency(agent?.current_balance)} • Holds{' '}
+                  {formatCurrency(agent?.holds_balance)}
+                </div>
               </div>
 
               {/* Form Fields */}

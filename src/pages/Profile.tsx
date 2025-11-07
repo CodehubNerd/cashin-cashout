@@ -25,6 +25,7 @@ type AgentResp = {
     fund_limit?: number
     current_balance?: number
     available_balance?: number
+    holds_balance?: number
     is_active?: boolean
     is_suspended?: boolean
     total_transactions_count?: number
@@ -39,6 +40,7 @@ type Txn = {
   amount: number
   party_id: string
   status: string
+  status_message?: string
   created_at?: number
   completed_at?: number
 }
@@ -77,6 +79,88 @@ const Profile: React.FC = () => {
   const [loading, setLoading] = React.useState(true)
   const navigate = useNavigate()
 
+  const [txnLoading, setTxnLoading] = React.useState(false)
+  const [txnError, setTxnError] = React.useState<string | null>(null)
+
+  // Full-width banner messages (status checks)
+  const [statusMessages, setStatusMessages] = React.useState<
+    Record<string, { status: string; status_message?: string }>
+  >({})
+  const [latestStatusId, setLatestStatusId] = React.useState<string | null>(
+    null
+  )
+
+  const [failureReasons, setFailureReasons] = React.useState<
+    Record<string, string>
+  >({})
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('txnReasons')
+      if (raw) setFailureReasons(JSON.parse(raw))
+    } catch (e) {
+      console.error('load txnReasons error', e)
+    }
+  }, [])
+
+  const checkTxnStatus = async (transaction_id: string) => {
+    if (!sessionToken) return
+    setStatusMessages((s) => ({
+      ...s,
+      [transaction_id]: { status: 'loading', status_message: 'Checking...' },
+    }))
+    setLatestStatusId(transaction_id)
+    setTxnLoading(true)
+    setTxnError(null)
+
+    try {
+      const headers = {
+        Authorization: `Bearer ${sessionToken ?? ''}`,
+        'Content-Type': 'application/json',
+      }
+      const resp = await axios.get(
+        `${AUTH_URL}/v1/cico/agents/transactions/${transaction_id}`,
+        { headers }
+      )
+      const payload = resp?.data?.data ?? resp?.data ?? null
+      const status = payload?.status ?? 'unknown'
+      const status_message =
+        payload?.status_message ?? payload?.description ?? ''
+      setStatusMessages((s) => ({
+        ...s,
+        [transaction_id]: { status, status_message },
+      }))
+      setTimeout(() => {
+        setStatusMessages((s) => {
+          const copy = { ...s }
+          delete copy[transaction_id]
+          return copy
+        })
+        setLatestStatusId((cur) => (cur === transaction_id ? null : cur))
+      }, 5000)
+    } catch (err) {
+      console.error('Check txn status error', err)
+      setStatusMessages((s) => ({
+        ...s,
+        [transaction_id]: {
+          status: 'error',
+          status_message: 'Unable to fetch transaction status',
+        },
+      }))
+      setLatestStatusId(transaction_id)
+      setTimeout(() => {
+        setStatusMessages((s) => {
+          const copy = { ...s }
+          delete copy[transaction_id]
+          return copy
+        })
+        setLatestStatusId((cur) => (cur === transaction_id ? null : cur))
+      }, 5000)
+    } finally {
+      setTxnLoading(false)
+    }
+  }
+
   React.useEffect(() => {
     let mounted = true
     const headers = {
@@ -93,24 +177,21 @@ const Profile: React.FC = () => {
     )
     const p3 = axios.get<SummaryResp>(
       `${AUTH_URL}/v1/cico/agents/me/summary/daily`,
-      {
-        headers,
-      }
+      { headers }
     )
 
     Promise.all([p1, p2, p3])
       .then(([a, b, c]) => {
         if (!mounted) return
-        // Debug log to inspect exact response shapes in browser console
-        console.debug('Profile responses', {
-          agentResp: a?.data,
-          txnsResp: b?.data,
-          summaryResp: c?.data,
-        })
-
-        // Accept either { data: {...} } or the payload directly at root
         const agentData = a?.data ? a.data.data ?? a.data : null
-        const txnsData = b?.data ? b.data.data ?? b.data : []
+        let txnsData = b?.data ? b.data.data ?? b.data : []
+        if (Array.isArray(txnsData)) {
+          txnsData = txnsData.map((t: any) => ({
+            ...t,
+            status_message:
+              t.status_message ?? t.statusMessage ?? t.description ?? undefined,
+          }))
+        }
         const summaryData = c?.data ? c.data.data ?? c.data : null
 
         setAgent(agentData ?? null)
@@ -150,7 +231,6 @@ const Profile: React.FC = () => {
           </Button>
         </div>
 
-        {/* Agent Profile Card - add bg-surface & border-outline and adjust text colors */}
         <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
             <CardTitle className='text-form-title text-lg text-white'>
@@ -190,9 +270,15 @@ const Profile: React.FC = () => {
                     </div>
                   </div>
                   <div className='text-right'>
-                    <div className='text-xs text-secondary'>Balance</div>
+                    <div className='text-xs text-secondary'>Available</div>
                     <div className='text-lg font-semibold text-blue-600'>
-                      {formatCurrency(agent?.current_balance)}
+                      {formatCurrency(
+                        agent?.available_balance ?? agent?.current_balance
+                      )}
+                    </div>
+                    <div className='text-xs text-secondary mt-1'>
+                      Current {formatCurrency(agent?.current_balance)} • Holds{' '}
+                      {formatCurrency(agent?.holds_balance)}
                     </div>
                     <div className='text-xs text-secondary mt-1'>
                       Limit {formatCurrency(agent?.fund_limit)}
@@ -235,7 +321,6 @@ const Profile: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Daily Summary */}
         <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
             <CardTitle className='text-form-title text-white'>
@@ -288,7 +373,6 @@ const Profile: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Recent Transactions */}
         <Card className='bg-surface border-outline hover:shadow-lg transition-all'>
           <CardHeader>
             <CardTitle className='text-form-title text-white'>
@@ -332,7 +416,20 @@ const Profile: React.FC = () => {
                       <div className='text-xs text-secondary'>
                         {formatDate(t.created_at)}
                       </div>
+                      {t.status && t.status.toLowerCase() === 'pending' && (
+                        <div className='mt-2'>
+                          <Button
+                            variant='ghost'
+                            onClick={() => checkTxnStatus(t.transaction_id)}
+                            className='text-sm'
+                          >
+                            Check Status
+                          </Button>
+                        </div>
+                      )}
                     </div>
+
+               
                   </div>
                 ))}
                 <div className='pt-2'>
@@ -351,6 +448,38 @@ const Profile: React.FC = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Full-width fixed banner for latest status message */}
+      {latestStatusId && statusMessages[latestStatusId] && (
+        <div className='fixed left-0 right-0 top-16 z-50 px-4'>
+          <div className='w-full bg-white/95 text-gray-800 shadow-md py-3'>
+            <div className='max-w-[1200px] mx-auto px-4 flex items-start gap-4'>
+              <div className='flex-1'>
+                <div className='font-medium'>
+                  {statusMessages[latestStatusId].status === 'loading'
+                    ? 'Checking status…'
+                    : statusMessages[latestStatusId].status}
+                </div>
+              </div>
+              <div>
+                <button
+                  className='text-sm text-gray-500 hover:text-gray-700'
+                  onClick={() => {
+                    setStatusMessages((s) => {
+                      const copy = { ...s }
+                      delete copy[latestStatusId]
+                      return copy
+                    })
+                    setLatestStatusId(null)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   )
 }

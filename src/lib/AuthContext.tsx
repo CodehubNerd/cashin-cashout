@@ -9,6 +9,8 @@ type ServiceType = 'daas' | 'cico'
 interface Agent {
   agent_id: string
   current_balance: number
+  holds_balance?: number
+  available_balance?: number
   email?: string
   full_name?: string
   fund_limit?: number
@@ -86,6 +88,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         throw new Error('Invalid login response')
       }
 
+      // Ensure available_balance exists (compute from current - holds if necessary)
+      const hasAvailable = typeof agentObj.available_balance === 'number'
+      const hasCurrent = typeof agentObj.current_balance === 'number'
+      const hasHolds = typeof agentObj.holds_balance === 'number'
+      if (!hasAvailable && hasCurrent) {
+        agentObj.available_balance = hasHolds
+          ? agentObj.current_balance - (agentObj.holds_balance ?? 0)
+          : agentObj.current_balance
+      }
+
       sessionStorage.setItem('session_token', token)
       sessionStorage.setItem('agent', JSON.stringify(agentObj))
       setSessionToken(token)
@@ -115,6 +127,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Add updateAgent to keep agent state + sessionStorage in sync
   const updateAgent = (updatedAgent: Agent) => {
     try {
+      // Keep available_balance consistent: if missing but current/holds present compute it
+      if (
+        typeof updatedAgent.available_balance !== 'number' &&
+        typeof updatedAgent.current_balance === 'number'
+      ) {
+        updatedAgent.available_balance =
+          updatedAgent.current_balance -
+          (typeof updatedAgent.holds_balance === 'number'
+            ? updatedAgent.holds_balance
+            : 0)
+      }
+
       sessionStorage.setItem('agent', JSON.stringify(updatedAgent))
     } catch {
       // ignore storage failures

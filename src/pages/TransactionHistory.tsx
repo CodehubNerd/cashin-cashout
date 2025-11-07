@@ -10,7 +10,7 @@ import {
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
-import { X, Eye } from 'lucide-react'
+import { X } from 'lucide-react'
 import axios from 'axios'
 import { useAuth } from '@/lib/AuthContext'
 import { AUTH_URL } from '../api/config'
@@ -23,6 +23,7 @@ interface Transaction {
   customerPhone: string
   timestamp: string
   status: 'Success' | 'Failed' | 'Pending'
+  statusMessage?: string
   commission: number
 }
 
@@ -37,65 +38,21 @@ const TransactionHistory = () => {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null)
 
-  // Mock transaction data
-  const MOCK_TRANSACTIONS: Transaction[] = [
-    {
-      id: 'TXN20241127001',
-      type: 'Cash-In',
-      amount: 500.0,
-      wallet: 'FNB',
-      customerPhone: '+268 7612 3456',
-      timestamp: '2024-11-27 14:30:00',
-      status: 'Success',
-      commission: 12.5,
-    },
-    {
-      id: 'TXN20241127002',
-      type: 'Cash-Out',
-      amount: 1200.0,
-      wallet: 'MOMO',
-      customerPhone: '+268 7698 7654',
-      timestamp: '2024-11-27 14:15:00',
-      status: 'Success',
-      commission: 24.0,
-    },
-    {
-      id: 'TXN20241127003',
-      type: 'Cash-In',
-      amount: 300.0,
-      wallet: 'Unayo',
-      customerPhone: '+268 7634 5678',
-      timestamp: '2024-11-27 13:45:00',
-      status: 'Success',
-      commission: 7.5,
-    },
-    {
-      id: 'TXN20241127004',
-      type: 'Cash-Out',
-      amount: 800.0,
-      wallet: 'Delta Pay',
-      customerPhone: '+268 7656 7890',
-      timestamp: '2024-11-27 12:30:00',
-      status: 'Failed',
-      commission: 0.0,
-    },
-    {
-      id: 'TXN20241127005',
-      type: 'Cash-In',
-      amount: 1500.0,
-      wallet: 'FNB',
-      customerPhone: '+268 7623 4567',
-      timestamp: '2024-11-27 11:20:00',
-      status: 'Success',
-      commission: 37.5,
-    },
-  ]
+  const [txnDetail, setTxnDetail] = useState<any | null>(null)
+  const [txnLoading, setTxnLoading] = useState(false)
+  const [txnError, setTxnError] = useState<string | null>(null)
 
-  // Replace the static transactions array with state
-  const [transactions, setTransactions] =
-    useState<Transaction[]>(MOCK_TRANSACTIONS)
+  const [statusMessages, setStatusMessages] = useState<
+    Record<string, { status: string; status_message?: string }>
+  >({})
+  const [latestStatusId, setLatestStatusId] = useState<string | null>(null)
 
-  // Helper to normalize API transaction to our Transaction shape
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [failureReasons, setFailureReasons] = useState<Record<string, string>>(
+    {}
+  )
+
   const mapApiTxnToTransaction = (txn: any): Transaction => {
     const id = txn.transaction_id ?? txn.id ?? 'N/A'
     const rawTs =
@@ -121,6 +78,12 @@ const TransactionHistory = () => {
     const wallet = txn.party_id ?? txn.wallet ?? txn.provider ?? 'Unknown'
     const customerPhone =
       txn.customer_phone ?? txn.party_phone ?? txn.customerPhone ?? '-'
+    const statusMessage =
+      txn.status_message ??
+      txn.statusMessage ??
+      txn.message ??
+      txn.description ??
+      ''
 
     return {
       id,
@@ -133,12 +96,18 @@ const TransactionHistory = () => {
         ? status
         : 'Pending') as 'Success' | 'Failed' | 'Pending',
       commission,
+      statusMessage: statusMessage || undefined,
     }
   }
 
   useEffect(() => {
     let mounted = true
-    if (!sessionToken) return
+    if (!sessionToken) {
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
     const headers = {
       Authorization: `Bearer ${sessionToken ?? ''}`,
       'Content-Type': 'application/json',
@@ -155,23 +124,89 @@ const TransactionHistory = () => {
           const mapped = payload.map(mapApiTxnToTransaction)
           setTransactions(mapped)
         } else {
-          // If payload is an object with list under a key, attempt common keys
           const list =
             payload.transactions ?? payload.data ?? payload.items ?? []
           if (Array.isArray(list)) {
             setTransactions(list.map(mapApiTxnToTransaction))
+          } else {
+            setTransactions([])
           }
         }
       })
       .catch((err) => {
         console.error('TransactionHistory fetch error', err)
-        // keep existing/mock transactions as fallback
+        setTransactions([])
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
       })
 
     return () => {
       mounted = false
     }
   }, [sessionToken])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('txnReasons')
+      if (raw) setFailureReasons(JSON.parse(raw))
+    } catch (e) {
+      console.error('load txnReasons error', e)
+    }
+  }, [])
+
+  const checkTxnStatus = async (transaction_id: string) => {
+    if (!sessionToken) return
+    setStatusMessages((s) => ({
+      ...s,
+      [transaction_id]: { status: 'loading', status_message: 'Checking...' },
+    }))
+    setLatestStatusId(transaction_id)
+    try {
+      const headers = {
+        Authorization: `Bearer ${sessionToken ?? ''}`,
+        'Content-Type': 'application/json',
+      }
+      const resp = await axios.get(
+        `${AUTH_URL}/v1/cico/agents/transactions/${transaction_id}`,
+        { headers }
+      )
+      const payload = resp?.data?.data ?? resp?.data ?? null
+      const status = payload?.status ?? 'unknown'
+      const status_message =
+        payload?.status_message ?? payload?.description ?? ''
+      setStatusMessages((s) => ({
+        ...s,
+        [transaction_id]: { status, status_message },
+      }))
+      setTimeout(() => {
+        setStatusMessages((s) => {
+          const copy = { ...s }
+          delete copy[transaction_id]
+          return copy
+        })
+        setLatestStatusId((cur) => (cur === transaction_id ? null : cur))
+      }, 5000)
+    } catch (err) {
+      console.error('Check txn status error', err)
+      setStatusMessages((s) => ({
+        ...s,
+        [transaction_id]: {
+          status: 'error',
+          status_message: 'Unable to fetch transaction status',
+        },
+      }))
+      setLatestStatusId(transaction_id)
+      setTimeout(() => {
+        setStatusMessages((s) => {
+          const copy = { ...s }
+          delete copy[transaction_id]
+          return copy
+        })
+        setLatestStatusId((cur) => (cur === transaction_id ? null : cur))
+      }, 5000)
+    }
+  }
 
   const filteredTransactions = transactions.filter((transaction) => {
     const matchesSearch =
@@ -206,8 +241,6 @@ const TransactionHistory = () => {
     return type === 'Cash-In' ? 'text-blue-600' : 'text-purple-600'
   }
 
-
-
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
     return date.toLocaleString('en-GB', {
@@ -221,9 +254,6 @@ const TransactionHistory = () => {
   return (
     <Layout title='Transaction History' showBack serviceType='cico'>
       <div className='space-y-6'>
-        {/* summary stats removed */}
-
-        {/* Filters */}
         <Card className='shadow-lg bg-stat border-outline'>
           <CardHeader className='pb-4'>
             <CardTitle className='text-lg'>Filter Transactions</CardTitle>
@@ -314,7 +344,6 @@ const TransactionHistory = () => {
           </CardContent>
         </Card>
 
-        {/* Transaction List */}
         <Card className='shadow-lg bg-stat border-outline'>
           <CardHeader className='pb-4'>
             <CardTitle className='text-lg'>Transaction List</CardTitle>
@@ -324,122 +353,193 @@ const TransactionHistory = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className='space-y-3'>
-              {filteredTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className='bg-stat rounded-lg p-4 hover:opacity-90 transition-colors cursor-pointer'
-                  onClick={() => setSelectedTransaction(transaction)}
-                >
-                  {/* Mobile Layout */}
-                  <div className='block lg:hidden'>
-                    <div className='flex items-center justify-between mb-2'>
-                      <div className='flex items-center space-x-2'>
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            transaction.status
-                          )}`}
-                        >
-                          {transaction.status}
-                        </span>
-                        <span
-                          className={`text-sm font-medium ${getTypeColor(
-                            transaction.type
-                          )}`}
-                        >
-                          {transaction.type}
-                        </span>
+            {loading ? (
+              <div className='py-8 flex items-center justify-center'>
+                <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-accent' />
+              </div>
+            ) : (
+              <div className='space-y-3'>
+                {filteredTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className='bg-stat rounded-lg p-4 hover:opacity-90 transition-colors cursor-pointer'
+                    onClick={() => setSelectedTransaction(transaction)}
+                  >
+                    <div className='block lg:hidden'>
+                      <div className='flex items-center justify-between mb-2'>
+                        <div className='flex items-center space-x-2'>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              transaction.status
+                            )}`}
+                          >
+                            {transaction.status}
+                          </span>
+                          <span
+                            className={`text-sm font-medium ${getTypeColor(
+                              transaction.type
+                            )}`}
+                          >
+                            {transaction.type}
+                          </span>
+                        </div>
+                        <div className='flex items-center space-x-2'>
+                          {transaction.status &&
+                            transaction.status.toLowerCase() === 'pending' && (
+                              <Button
+                                variant='ghost'
+                                size='sm'
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  checkTxnStatus(transaction.id)
+                                }}
+                              >
+                                Check Status
+                              </Button>
+                            )}
+                        </div>
                       </div>
-                      <Eye className='h-4 w-4 text-gray-400' />
-                    </div>
-                    <div className='flex items-center justify-between'>
-                      <div>
-                        <p className='font-medium text-sm text-gray-600'>
-                          {transaction.wallet}
-                        </p>
-                        <p className='text-xs text-gray-500'>
-                          {formatTime(transaction.timestamp)}
-                        </p>
-                      </div>
-                      <div className='text-right'>
-                        <p className='font-semibold text-lg'>
-                          {formatCurrency(transaction.amount)}
-                        </p>
-                        {transaction.commission > 0 && (
-                          <p className='text-xs text-green-600'>
-                            +{formatCurrency(transaction.commission)}
+                      <div className='flex items-center justify-between'>
+                        <div>
+                          <p className='font-medium text-sm text-gray-600'>
+                            {transaction.wallet}
                           </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Desktop Layout */}
-                  <div className='hidden lg:block'>
-                    <div className='flex items-center justify-between mb-3'>
-                      <div className='flex items-center space-x-3'>
-                        <span className='font-mono font-medium text-sm'>
-                          {transaction.id}
-                        </span>
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
-                            transaction.status
-                          )}`}
-                        >
-                          {transaction.status}
-                        </span>
-                      </div>
-                      <div className='text-right'>
-                        <p className='font-semibold text-lg'>
-                          {formatCurrency(transaction.amount)}
-                        </p>
-                        {transaction.commission > 0 && (
-                          <p className='text-sm text-green-600'>
-                            +{formatCurrency(transaction.commission)} commission
+                          <p className='text-xs text-gray-500'>
+                            {formatTime(transaction.timestamp)}
                           </p>
-                        )}
+                        </div>
+                        <div className='text-right'>
+                          <p className='font-semibold text-lg'>
+                            {formatCurrency(transaction.amount)}
+                          </p>
+                          {transaction.commission > 0 && (
+                            <p className='text-xs text-green-600'>
+                              +{formatCurrency(transaction.commission)}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className='grid grid-cols-2 md:grid-cols-4 gap-4 text-sm'>
-                      <div>
-                        <p className='text-gray-500'>Type</p>
-                        <p className='font-medium'>{transaction.type}</p>
+                    <div className='hidden lg:block'>
+                      <div className='flex items-center justify-between mb-3'>
+                        <div className='flex items-center space-x-3'>
+                          <span className='font-mono font-medium text-sm'>
+                            {transaction.id}
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(
+                              transaction.status
+                            )}`}
+                          >
+                            {transaction.status}
+                          </span>
+                        </div>
+                        <div className='text-right flex items-center space-x-3'>
+                          <div>
+                            <p className='font-semibold text-lg'>
+                              {formatCurrency(transaction.amount)}
+                            </p>
+                            {transaction.commission > 0 && (
+                              <p className='text-sm text-green-600'>
+                                +{formatCurrency(transaction.commission)}{' '}
+                                commission
+                              </p>
+                            )}
+                          </div>
+
+                          {transaction.status &&
+                            transaction.status.toLowerCase() === 'pending' && (
+                              <Button
+                                variant='ghost'
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  checkTxnStatus(transaction.id)
+                                }}
+                              >
+                                Check Status
+                              </Button>
+                            )}
+                        </div>
                       </div>
-                      <div>
-                        <p className='text-gray-500'>Wallet</p>
-                        <p className='font-medium'>{transaction.wallet}</p>
-                      </div>
-                      <div>
-                        <p className='text-gray-500'>Customer</p>
-                        <p className='font-medium'>
-                          {transaction.customerPhone}
-                        </p>
-                      </div>
-                      <div>
-                        <p className='text-gray-500'>Time</p>
-                        <p className='font-medium'>
-                          {new Date(transaction.timestamp).toLocaleString()}
-                        </p>
+
+                      <div className='grid grid-cols-2 md:grid-cols-4 gap-4 text-sm'>
+                        <div>
+                          <p className='text-gray-500'>Type</p>
+                          <p className='font-medium'>{transaction.type}</p>
+                        </div>
+                        <div>
+                          <p className='text-gray-500'>Wallet</p>
+                          <p className='font-medium'>{transaction.wallet}</p>
+                        </div>
+                        <div>
+                          <p className='text-gray-500'>Customer</p>
+                          <p className='font-medium'>
+                            {transaction.customerPhone}
+                          </p>
+                        </div>
+                        <div>
+                          <p className='text-gray-500'>Time</p>
+                          <p className='font-medium'>
+                            {new Date(transaction.timestamp).toLocaleString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
+
+                    {transaction.status === 'Failed' && (
+                      <div className='mt-3 text-sm text-red-600 break-words max-w-full'>
+                        {transaction.statusMessage ??
+                          failureReasons[transaction.id] ??
+                          ''}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                ))}
 
-              {filteredTransactions.length === 0 && (
-                <div className='text-center py-8'>
-                  <p className='text-gray-500'>
-                    No transactions found matching your filters
-                  </p>
-                </div>
-              )}
-            </div>
+                {filteredTransactions.length === 0 && (
+                  <div className='text-center py-8'>
+                    <p className='text-gray-500'>No transactions found</p>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Transaction Detail Modal */}
+      {latestStatusId && statusMessages[latestStatusId] && (
+        <div className='fixed left-0 right-0 top-16 z-50 px-4'>
+          <div className='w-full bg-white/95 text-gray-800 shadow-md py-3'>
+            <div className='max-w-[1200px] mx-auto px-4 flex items-start gap-4'>
+              <div className='flex-1'>
+                <div className='font-medium'>
+                  {statusMessages[latestStatusId].status === 'loading'
+                    ? 'Checking status…'
+                    : statusMessages[latestStatusId].status}
+                </div>
+           
+              </div>
+              <div>
+                <button
+                  className='text-sm text-gray-500 hover:text-gray-700'
+                  onClick={() => {
+                    setStatusMessages((s) => {
+                      const copy = { ...s }
+                      delete copy[latestStatusId]
+                      return copy
+                    })
+                    setLatestStatusId(null)
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedTransaction && (
         <div className='fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50'>
           <div className='bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto'>
