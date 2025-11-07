@@ -38,10 +38,6 @@ const TransactionHistory = () => {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null)
 
-  const [txnDetail, setTxnDetail] = useState<any | null>(null)
-  const [txnLoading, setTxnLoading] = useState(false)
-  const [txnError, setTxnError] = useState<string | null>(null)
-
   const [statusMessages, setStatusMessages] = useState<
     Record<string, { status: string; status_message?: string }>
   >({})

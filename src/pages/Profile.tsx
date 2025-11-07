@@ -79,9 +79,6 @@ const Profile: React.FC = () => {
   const [loading, setLoading] = React.useState(true)
   const navigate = useNavigate()
 
-  const [txnLoading, setTxnLoading] = React.useState(false)
-  const [txnError, setTxnError] = React.useState<string | null>(null)
-
   // Full-width banner messages (status checks)
   const [statusMessages, setStatusMessages] = React.useState<
     Record<string, { status: string; status_message?: string }>
@@ -89,10 +86,6 @@ const Profile: React.FC = () => {
   const [latestStatusId, setLatestStatusId] = React.useState<string | null>(
     null
   )
-
-  const [failureReasons, setFailureReasons] = React.useState<
-    Record<string, string>
-  >({})
 
   React.useEffect(() => {
     try {
@@ -110,8 +103,6 @@ const Profile: React.FC = () => {
       [transaction_id]: { status: 'loading', status_message: 'Checking...' },
     }))
     setLatestStatusId(transaction_id)
-    setTxnLoading(true)
-    setTxnError(null)
 
     try {
       const headers = {
@@ -156,8 +147,6 @@ const Profile: React.FC = () => {
         })
         setLatestStatusId((cur) => (cur === transaction_id ? null : cur))
       }, 5000)
-    } finally {
-      setTxnLoading(false)
     }
   }
 

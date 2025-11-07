@@ -626,7 +626,9 @@ const CashOut: React.FC = () => {
     }
   }
 
-  const formatCurrency = (amount: string | number): string => {
+  const formatCurrency = (amount: string | number | undefined): string => {
+    // treat undefined/null as zero to avoid TS errors when optional fields are passed
+    if (amount === undefined || amount === null) return 'E 0.00'
     const num = typeof amount === 'string' ? parseFloat(amount) : amount
     return isNaN(num) ? 'E 0.00' : `E ${num.toFixed(2)}`
   }
