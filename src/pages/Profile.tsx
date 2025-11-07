@@ -87,6 +87,11 @@ const Profile: React.FC = () => {
     null
   )
 
+  // persisted failure reasons (loaded from localStorage 'txnReasons')
+  const [failureReasons, setFailureReasons] = React.useState<Record<string, string>>(
+    {}
+  )
+  
   React.useEffect(() => {
     try {
       const raw = localStorage.getItem('txnReasons')
@@ -417,8 +422,6 @@ const Profile: React.FC = () => {
                         </div>
                       )}
                     </div>
-
-               
                   </div>
                 ))}
                 <div className='pt-2'>

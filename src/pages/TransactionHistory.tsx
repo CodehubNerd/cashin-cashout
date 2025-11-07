@@ -514,7 +514,6 @@ const TransactionHistory = () => {
                     ? 'Checking status…'
                     : statusMessages[latestStatusId].status}
                 </div>
-           
               </div>
               <div>
                 <button
