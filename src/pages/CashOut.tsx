@@ -107,8 +107,25 @@ const CashOut: React.FC = () => {
   const [lastTransactionId, setLastTransactionId] = React.useState<
     string | null
   >(null)
+  // saved reason for last transaction (populated from localStorage txnReasons map)
+  const [txnReason, setTxnReason] = React.useState<string | null>(null)
   const navigate = useNavigate()
   const { toast } = useToast()
+
+  // load saved reason for lastTransactionId from localStorage
+  React.useEffect(() => {
+    if (!lastTransactionId) {
+      setTxnReason(null)
+      return
+    }
+    try {
+      const raw = localStorage.getItem('txnReasons') ?? '{}'
+      const map = JSON.parse(raw) as Record<string, string>
+      setTxnReason(map[lastTransactionId] ?? null)
+    } catch (e) {
+      setTxnReason(null)
+    }
+  }, [lastTransactionId])
 
   // On mount, check URL for pre-selected wallet and set agent balance from logged-in agent
   React.useEffect(() => {
@@ -300,13 +317,24 @@ const CashOut: React.FC = () => {
           resp.message ??
           null
         if (txId && reason) {
+          console.log('Transaction failed:', { txId, reason }) // 👈 log it
+
           saveTxnReason(txId, String(reason))
-          // SHOW reason immediately via toast for agent visibility
+          // keep local state in sync so UI/toasts show reason immediately
+          setTxnReason(String(reason))
+
+          // SHOW reason immediately via toast for agent visibility (include txId)
           toast({
             title: 'Transaction Failed',
             description: String(reason),
             variant: 'destructive',
           })
+
+          // Persist shown txn id and stop further processing to avoid generic thrown error
+          setLastTransactionId(txId)
+          setIsLoading(false)
+          setStep('transaction')
+          return
         }
       }
 
@@ -330,6 +358,14 @@ const CashOut: React.FC = () => {
         setLastTransactionId(txId ?? null)
         setAgentBalance(newAvailable)
 
+        // if server still returned a reason even on "success", persist & surface it
+        const maybeReason =
+          resp.data?.reason ?? resp.data?.momo_response?.body?.reason ?? null
+        if (txId && maybeReason) {
+          saveTxnReason(txId, String(maybeReason))
+          setTxnReason(String(maybeReason))
+        }
+
         if (agent && updateAgent) {
           const updatedAgent = {
             ...agent,
@@ -347,7 +383,9 @@ const CashOut: React.FC = () => {
         setStep('complete')
         toast({
           title: 'Transaction Successful',
-          description: `Cash-out of E ${formData.withdrawAmount} completed`,
+          description: `Cash-out of E ${formData.withdrawAmount} completed${
+            maybeReason ? ` — Reason: ${maybeReason}` : ''
+          }`,
         })
       } else {
         // throw to enter catch block and show toast as before
@@ -390,6 +428,8 @@ const CashOut: React.FC = () => {
         null
       if (txId && reason) {
         saveTxnReason(txId, String(reason))
+        // update view state as well
+        setTxnReason(String(reason))
         toast({
           title: 'Transaction Failed',
           description: String(reason),
@@ -521,6 +561,8 @@ const CashOut: React.FC = () => {
           response.data.response.Trailer.DetailedDesc ?? 'Transaction failed'
         if (txId && reason) {
           saveTxnReason(txId, String(reason))
+          // update view state so UI immediately reflects saved reason
+          setTxnReason(String(reason))
           // SHOW reason immediately via toast for agent visibility
           toast({
             title: 'Transaction Failed',
@@ -564,6 +606,8 @@ const CashOut: React.FC = () => {
         serverData?.response?.Trailer?.DetailedDesc ?? 'Transaction failed'
       if (txId && reason) {
         saveTxnReason(txId, String(reason))
+        // update view state so UI immediately reflects saved reason
+        setTxnReason(String(reason))
         toast({
           title: 'Transaction Failed',
           description: String(reason),
@@ -767,6 +811,13 @@ const CashOut: React.FC = () => {
                       {formatCurrency(agentBalance)}
                     </p>
                   </div>
+                  {/* Show persisted reason if available (e.g. "NOT_ENOUGH_FUNDS") */}
+                  {txnReason && (
+                    <div className='col-span-2'>
+                      <p className='text-gray-400'>Reason</p>
+                      <p className='font-semibold text-red-600'>{txnReason}</p>
+                    </div>
+                  )}
                   {customerData && (
                     <div className='col-span-2'>
                       <p className='text-gray-400'>Customer</p>
