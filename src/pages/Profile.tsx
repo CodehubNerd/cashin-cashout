@@ -87,20 +87,6 @@ const Profile: React.FC = () => {
     null
   )
 
-  // persisted failure reasons (loaded from localStorage 'txnReasons')
-  const [failureReasons, setFailureReasons] = React.useState<
-    Record<string, string>
-  >({})
-
-  React.useEffect(() => {
-    try {
-      const raw = localStorage.getItem('txnReasons')
-      if (raw) setFailureReasons(JSON.parse(raw))
-    } catch (e) {
-      console.error('load txnReasons error', e)
-    }
-  }, [])
-
   const checkTxnStatus = async (transaction_id: string) => {
     if (!sessionToken) return
     setStatusMessages((s) => ({
