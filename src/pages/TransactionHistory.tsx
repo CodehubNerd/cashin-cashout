@@ -483,13 +483,7 @@ const TransactionHistory = () => {
                       </div>
                     </div>
 
-                    {transaction.status === 'Failed' && (
-                      <div className='mt-3 text-sm text-red-600 break-words max-w-full'>
-                        {transaction.statusMessage ??
-                          failureReasons[transaction.id] ??
-                          ''}
-                      </div>
-                    )}
+                  
                   </div>
                 ))}
 
