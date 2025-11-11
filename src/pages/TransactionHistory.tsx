@@ -39,7 +39,7 @@ const TransactionHistory = () => {
     useState<Transaction | null>(null)
 
   const [statusMessages, setStatusMessages] = useState<
-    Record<string, { status: string; status_message?: string }>
+    Record<string, { status: string }>
   >({})
   const [latestStatusId, setLatestStatusId] = useState<string | null>(null)
 
@@ -155,7 +155,7 @@ const TransactionHistory = () => {
     if (!sessionToken) return
     setStatusMessages((s) => ({
       ...s,
-      [transaction_id]: { status: 'loading', status_message: 'Checking...' },
+      [transaction_id]: { status: 'loading' },
     }))
     setLatestStatusId(transaction_id)
     try {
@@ -169,11 +169,9 @@ const TransactionHistory = () => {
       )
       const payload = resp?.data?.data ?? resp?.data ?? null
       const status = payload?.status ?? 'unknown'
-      const status_message =
-        payload?.status_message ?? payload?.description ?? ''
       setStatusMessages((s) => ({
         ...s,
-        [transaction_id]: { status, status_message },
+        [transaction_id]: { status },
       }))
       setTimeout(() => {
         setStatusMessages((s) => {
@@ -189,7 +187,6 @@ const TransactionHistory = () => {
         ...s,
         [transaction_id]: {
           status: 'error',
-          status_message: 'Unable to fetch transaction status',
         },
       }))
       setLatestStatusId(transaction_id)
@@ -376,6 +373,9 @@ const TransactionHistory = () => {
                               transaction.type
                             )}`}
                           >
+                            {transaction.type}
+                          </span>
+                        </div>
                             {transaction.type}
                           </span>
                         </div>
