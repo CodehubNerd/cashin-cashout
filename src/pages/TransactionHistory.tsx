@@ -45,9 +45,6 @@ const TransactionHistory = () => {
 
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
-  const [failureReasons, setFailureReasons] = useState<Record<string, string>>(
-    {}
-  )
 
   const mapApiTxnToTransaction = (txn: any): Transaction => {
     const id = txn.transaction_id ?? txn.id ?? 'N/A'
@@ -141,15 +138,6 @@ const TransactionHistory = () => {
       mounted = false
     }
   }, [sessionToken])
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem('txnReasons')
-      if (raw) setFailureReasons(JSON.parse(raw))
-    } catch (e) {
-      console.error('load txnReasons error', e)
-    }
-  }, [])
 
   const checkTxnStatus = async (transaction_id: string) => {
     if (!sessionToken) return
@@ -482,8 +470,6 @@ const TransactionHistory = () => {
                         </div>
                       </div>
                     </div>
-
-                  
                   </div>
                 ))}
 
