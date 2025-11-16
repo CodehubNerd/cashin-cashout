@@ -325,9 +325,7 @@ const CashIn = () => {
               Awaiting operator response
             </Typography>
             <Typography variant='body2' color='textSecondary'>
-              The cash-in request was sent and is being processed by the mobile
-              operator. If it's successful you'll see the transaction summary.
-              If it fails or times out you'll be notified here.
+              The cashin request was sent and is being processed.
             </Typography>
           </Card>
         </Box>

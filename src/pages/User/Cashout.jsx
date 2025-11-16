@@ -135,6 +135,26 @@ const Cashout = () => {
     return `268${digits}`
   }
 
+  // ADD: helper to extract detailed error info (incl. momo reason)
+  const buildServerErrorMessage = (payload) => {
+    // payload can be response (axios resp), err.response?.data, or plain object
+    const p = payload ?? {}
+    // try various likely shapes
+    const top = p.data ?? p // if p is axios response, p.data; if it's already body, use itself
+    const serverError = top?.error ?? top?.message ?? 'Transaction failed'
+    const code = top?.code ?? p?.code
+    // look for nested momo reason
+    const momoReason =
+      top?.data?.momo_response?.body?.reason ??
+      top?.momo_response?.body?.reason ??
+      top?.data?.momo_response?.body?.status ??
+      top?.momo_response?.body?.status
+    let msg = serverError
+    if (momoReason) msg = `${msg} (${momoReason})`
+    if (code) msg = `${msg} (${code})`
+    return msg
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedWallet) return
@@ -188,13 +208,11 @@ const Cashout = () => {
     } catch (err) {
       console.warn('Customer info lookup failed:', err)
       const serverErrBody = err.response?.data
-      const serverError =
-        serverErrBody?.error ??
-        serverErrBody?.message ??
-        err.message ??
-        'Unable to verify customer'
-      const serverCode = serverErrBody?.code
-      setSnackMsg(serverCode ? `${serverError} (${serverCode})` : serverError)
+      // use helper to build improved message
+      const serverMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(serverMsg)
       setSnackSeverity('error')
       setSnackOpen(true)
     } finally {
@@ -245,12 +263,9 @@ const Cashout = () => {
         setLastTransactionId(response.data.data?.transaction_id ?? null)
         setStep('complete')
       } else {
-        const serverError =
-          response?.data?.error ??
-          response?.data?.message ??
-          'Transaction failed'
-        const serverCode = response?.data?.code
-        setSnackMsg(serverCode ? `${serverError} (${serverCode})` : serverError)
+        // build improved server message including momo reason when available
+        const finalMsg = buildServerErrorMessage(response)
+        setSnackMsg(finalMsg)
         setSnackSeverity('error')
         setSnackOpen(true)
         // revert to verify so agent can retry
@@ -258,14 +273,11 @@ const Cashout = () => {
       }
     } catch (err) {
       console.error('Transaction failed:', err)
-      const serverErrBody = err.response?.data
-      const serverError =
-        serverErrBody?.error ??
-        serverErrBody?.message ??
-        err.message ??
-        'Unable to process transaction'
-      const serverCode = serverErrBody?.code
-      setSnackMsg(serverCode ? `${serverError} (${serverCode})` : serverError)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
       setSnackSeverity('error')
       setSnackOpen(true)
       // revert to verify so agent can retry
@@ -293,7 +305,7 @@ const Cashout = () => {
               Awaiting for approval
             </Typography>
             <Typography variant='body2' color='textSecondary'>
-              Please approved the trsaction on your device...
+              Please approved the transaction on your device...
             </Typography>
             {/* optional small back/cancel action */}
             <Box mt={3}>
