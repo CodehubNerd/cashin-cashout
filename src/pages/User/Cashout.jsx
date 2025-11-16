@@ -290,12 +290,10 @@ const Cashout = () => {
           <Card sx={{ textAlign: 'center', p: 3, maxWidth: 520 }}>
             <CircularProgress sx={{ mb: 2 }} />
             <Typography variant='h6' fontWeight='bold' gutterBottom>
-              Awaiting operator response
+              Awaiting for approval
             </Typography>
             <Typography variant='body2' color='textSecondary'>
-              You've approved the transaction. The system is waiting for the
-              mobile money operator to confirm. This may take a few moments. If
-              the request times out or fails you will be notified here.
+              Please approved the trsaction on your device...
             </Typography>
             {/* optional small back/cancel action */}
             <Box mt={3}>
