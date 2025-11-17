@@ -3,7 +3,7 @@ import { imagesrc } from "../constants"; // added
 // Wallet configurations
 export const walletConfig = [
   { name: "momo", enabled: true, icon: imagesrc.momo },
-  { name: "unayo", enabled: false, icon: imagesrc.unayo },
+  { name: "unayo", enabled: true, icon: imagesrc.unayo },
   { name: "deltapay", enabled: true, icon: imagesrc.delta },
   { name: "instacash", enabled: true, icon: imagesrc.instacash },
 ];

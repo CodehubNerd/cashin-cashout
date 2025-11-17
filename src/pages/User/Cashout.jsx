@@ -31,6 +31,21 @@ const ACCOUNT_TYPE_OPTIONS = [
 
 const BANK_OPTIONS = ['FNB', 'Eswatini Bank', 'Nedbank', 'Standard Bank']
 
+const UNAYO_CASHOUT_ACTIONS = [
+  {
+    value: 'redeem_payment',
+    label: 'Redeem Payment Voucher',
+    endpoint: '/v1/cico/agents/unayo/redeem/payment',
+    impact: 'credit',
+  },
+  {
+    value: 'send_money_v3',
+    label: 'Send Money Voucher (v3)',
+    endpoint: '/v1/cico/agents/unayo/send-money/v3',
+    impact: 'debit',
+  },
+]
+
 const Cashout = () => {
   const { sessionToken, agent, updateAgent } = useAuth()
   const [step, setStep] = useState('method')
@@ -48,6 +63,7 @@ const Cashout = () => {
     bankName: '',
     bankBranchName: '',
     bankCountry: 'Eswatini',
+    instaPhoneNumber: '',
   })
   const [isLoading, setIsLoading] = useState(false)
   const [lastTransactionId, setLastTransactionId] = useState(null)
@@ -170,6 +186,7 @@ const Cashout = () => {
     e.preventDefault()
     if (!selectedWallet) return
     if (selectedWallet?.name === 'deltapay') return
+    if (selectedWallet?.name === 'instacash') return
     if (!formData.amount) {
       setSnackMsg('Enter amount')
       setSnackSeverity('warning')
@@ -326,9 +343,89 @@ const Cashout = () => {
     }
   }
 
+  const handleInstaWithdrawalSubmit = async (e) => {
+    e?.preventDefault?.()
+    if (selectedWallet?.name !== 'instacash') return
+
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      setSnackMsg('Enter a valid amount')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    const rawPhone = formData.instaPhoneNumber?.toString().trim()
+    const digitsOnly = rawPhone?.replace(/\D/g, '')
+    if (!digitsOnly) {
+      setSnackMsg('Enter customer phone number')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+    if (digitsOnly.length !== 8) {
+      setSnackMsg('Phone number must be 8 digits')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    setIsLoading(true)
+    setStep('processing')
+
+    try {
+      const body = {
+        amount: Number(formData.amount).toFixed(2),
+        phone_country_dialcode: '268',
+        phone_number: digitsOnly,
+      }
+
+      const url = `${API_URL}/v1/cico/agents/deltapay/withdrawal/instacash`
+      const resp = await axios.post(url, body, {
+        headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+      })
+
+      if (resp?.data?.success) {
+        const data = resp.data.data ?? {}
+        let newBal = agentBalance
+        if (typeof data.available_balance === 'number') {
+          newBal = data.available_balance
+        } else if (typeof data.balance_before === 'number') {
+          newBal = data.balance_before + Number(formData.amount)
+        } else {
+          newBal = agentBalance + Number(formData.amount)
+        }
+
+        if (agent && updateAgent)
+          updateAgent({ ...agent, current_balance: newBal })
+        setAgentBalance(newBal)
+        setLastTransactionId(data.transaction_id ?? null)
+        setStep('complete')
+      } else {
+        const finalMsg = buildServerErrorMessage(resp)
+        setSnackMsg(finalMsg)
+        setSnackSeverity('error')
+        setSnackOpen(true)
+        setStep('transaction')
+      }
+    } catch (err) {
+      console.error('InstaCash withdrawal failed:', err)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
+      setSnackSeverity('error')
+      setSnackOpen(true)
+      setStep('transaction')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleKYCConfirm = async () => {
     if (!selectedWallet) return
     if (selectedWallet?.name === 'deltapay') return
+    if (selectedWallet?.name === 'instacash') return
 
     if (!formData.amount) {
       setSnackMsg('Enter amount')
@@ -411,11 +508,15 @@ const Cashout = () => {
             <Typography variant='h6' fontWeight='bold' gutterBottom>
               {selectedWallet?.name === 'deltapay'
                 ? 'Processing bank withdrawal'
+                : selectedWallet?.name === 'instacash'
+                ? 'Processing InstaCash withdrawal'
                 : 'Awaiting approval'}
             </Typography>
             <Typography variant='body2' color='textSecondary'>
               {selectedWallet?.name === 'deltapay'
                 ? 'Submitting withdrawal request to DeltaPay. This may take a moment.'
+                : selectedWallet?.name === 'instacash'
+                ? 'Submitting InstaCash withdrawal request. This may take a moment.'
                 : 'Please approve the transaction on your device.'}
             </Typography>
             {/* optional small back/cancel action */}
@@ -425,7 +526,8 @@ const Cashout = () => {
                 onClick={() => {
                   // allow user to return while keeping request in background
                   setStep(
-                    selectedWallet?.name === 'deltapay'
+                    selectedWallet?.name === 'deltapay' ||
+                      selectedWallet?.name === 'instacash'
                       ? 'transaction'
                       : 'verify'
                   )
@@ -855,6 +957,52 @@ const Cashout = () => {
                     <CircularProgress size={22} color='inherit' />
                   ) : (
                     'Initiate DeltaPay Withdrawal'
+                  )}
+                </Button>
+              </form>
+            ) : selectedWallet?.name === 'instacash' ? (
+              <form onSubmit={handleInstaWithdrawalSubmit}>
+                <Box mb={2}>
+                  <TextField
+                    label='Amount (SZL)'
+                    type='number'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.amount}
+                    onChange={(e) =>
+                      setFormData({ ...formData, amount: e.target.value })
+                    }
+                  />
+                </Box>
+
+                <Box mb={3}>
+                  <TextField
+                    label='Phone Number'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.instaPhoneNumber}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        instaPhoneNumber: e.target.value,
+                      })
+                    }
+                    helperText='Enter 8-digit InstaCash number (e.g., 76XXXXXX)'
+                  />
+                </Box>
+
+                <Button
+                  variant='contained'
+                  color='primary'
+                  size='large'
+                  fullWidth
+                  type='submit'
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <CircularProgress size={22} color='inherit' />
+                  ) : (
+                    'Initiate InstaCash Withdrawal'
                   )}
                 </Button>
               </form>

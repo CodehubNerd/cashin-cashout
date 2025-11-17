@@ -12,6 +12,7 @@ import {
   Grid,
   Snackbar,
   Alert,
+  MenuItem,
 } from '@mui/material'
 import { ArrowBack } from '@mui/icons-material'
 import VerifiedIcon from '@mui/icons-material/Verified'
@@ -22,6 +23,19 @@ import { walletProviders } from '../../lib/wallets'
 import Header from '../../components/Header'
 import UndoIcon from '@mui/icons-material/Undo'
 import { imagesrc } from '../../constants'
+
+const UNAYO_CASHIN_ACTIONS = [
+  {
+    value: 'redeem_cashin',
+    label: 'Redeem Cash-In Voucher',
+    endpoint: '/v1/cico/agents/unayo/redeem/cashin',
+  },
+  {
+    value: 'redeem_sendmoney',
+    label: 'Redeem Send Money Voucher',
+    endpoint: '/v1/cico/agents/unayo/redeem/sendmoney',
+  },
+]
 
 const CashIn = () => {
   const { sessionToken, agent, updateAgent } = useAuth()
@@ -36,6 +50,8 @@ const CashIn = () => {
     pin: '',
     note: '',
     phoneNumber: '',
+    unayoVoucherCode: '',
+    unayoReference: '',
   })
   const [isLoading, setIsLoading] = useState(false)
   const [lastTransactionId, setLastTransactionId] = useState(null)
@@ -45,6 +61,12 @@ const CashIn = () => {
   const [customerData, setCustomerData] = useState(null)
   const [customerInfo, setCustomerInfo] = useState(null)
   const [otp, setOtp] = useState('')
+  const [unayoCashInAction, setUnayoCashInAction] = useState(
+    UNAYO_CASHIN_ACTIONS[0].value
+  )
+  const currentUnayoCashInLabel =
+    UNAYO_CASHIN_ACTIONS.find((a) => a.value === unayoCashInAction)?.label ??
+    'Redeem Voucher'
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
@@ -81,6 +103,12 @@ const CashIn = () => {
       }
     }
   }, [walletName, agent])
+
+  useEffect(() => {
+    if (selectedWallet?.name !== 'unayo') {
+      setUnayoCashInAction(UNAYO_CASHIN_ACTIONS[0].value)
+    }
+  }, [selectedWallet?.name])
 
   // fetch fresh profile to populate balances
   const fetchProfile = useCallback(async () => {
@@ -149,6 +177,11 @@ const CashIn = () => {
 
     if (selectedWallet?.name === 'instacash') {
       await handleInstaDepositSubmit()
+      return
+    }
+
+    if (selectedWallet?.name === 'unayo') {
+      await handleUnayoCashInSubmit()
       return
     }
 
@@ -338,6 +371,78 @@ const CashIn = () => {
       setSnackSeverity('error')
       setSnackOpen(true)
       setStep('transaction')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleUnayoCashInSubmit = async () => {
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      setSnackMsg('Enter a valid amount')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    if (!formData.unayoVoucherCode?.trim()) {
+      setSnackMsg('Enter voucher code')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    if (!formData.unayoReference?.trim()) {
+      setSnackMsg('Enter reference')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    const selectedAction =
+      UNAYO_CASHIN_ACTIONS.find((a) => a.value === unayoCashInAction) ??
+      UNAYO_CASHIN_ACTIONS[0]
+
+    const amountNum = Number(formData.amount)
+    const amountFormatted = amountNum.toFixed(2)
+
+    const body = {
+      meta: {
+        voucher_code: formData.unayoVoucherCode.trim(),
+        reference: formData.unayoReference.trim(),
+        amount: Number(amountFormatted),
+      },
+    }
+
+    setIsLoading(true)
+    try {
+      const url = `${API_URL}${selectedAction.endpoint}`
+      const resp = await axios.post(url, body, {
+        headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+      })
+
+      if (resp?.data?.success) {
+        const newBalance = agentBalance + amountNum
+        if (agent && updateAgent) {
+          updateAgent({ ...agent, current_balance: newBalance })
+        }
+        setAgentBalance(newBalance)
+        setLastTransactionId(resp.data?.data?.voucher_code ?? null)
+        setStep('complete')
+      } else {
+        const finalMsg = buildServerErrorMessage(resp)
+        setSnackMsg(finalMsg)
+        setSnackSeverity('error')
+        setSnackOpen(true)
+      }
+    } catch (err) {
+      console.error('Unayo cash-in failed:', err)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
+      setSnackSeverity('error')
+      setSnackOpen(true)
     } finally {
       setIsLoading(false)
     }
@@ -912,6 +1017,118 @@ const CashIn = () => {
                         <CircularProgress size={22} color='inherit' />
                       ) : (
                         'Initiate DeltaPay Deposit'
+                      )}
+                    </Button>
+                  </form>
+                ) : selectedWallet?.name === 'unayo' ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      handleUnayoCashInSubmit()
+                    }}
+                  >
+                    <Box mb={2}>
+                      <TextField
+                        select
+                        label='Select Unayo Action'
+                        variant='outlined'
+                        fullWidth
+                        value={unayoCashInAction}
+                        onChange={(e) => setUnayoCashInAction(e.target.value)}
+                      >
+                        {UNAYO_CASHIN_ACTIONS.map((action) => (
+                          <MenuItem key={action.value} value={action.value}>
+                            {action.label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                    </Box>
+
+                    <Box mb={2}>
+                      <TextField
+                        label='Voucher Code'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.unayoVoucherCode}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            unayoVoucherCode: e.target.value,
+                          })
+                        }
+                      />
+                    </Box>
+
+                    <Box mb={2}>
+                      <TextField
+                        label='Reference'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.unayoReference}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            unayoReference: e.target.value,
+                          })
+                        }
+                      />
+                    </Box>
+
+                    <Box mb={2}>
+                      <TextField
+                        label='Amount (SZL)'
+                        type='number'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
+                        }
+                      />
+                    </Box>
+
+                    {selectedWallet?.quickAmounts?.length ? (
+                      <Grid container spacing={1} mb={2}>
+                        {selectedWallet.quickAmounts.map((amt) => (
+                          <Grid item xs={3} key={amt}>
+                            <Button
+                              variant='outlined'
+                              fullWidth
+                              onClick={() =>
+                                setFormData({
+                                  ...formData,
+                                  amount: amt.toString(),
+                                })
+                              }
+                              sx={{
+                                border: '1px solid #B0BEC5',
+                                color: '#B0BEC5',
+                                backgroundColor: 'transparent',
+                                '&:hover': {
+                                  border: '1px solid #B0BEC5',
+                                  backgroundColor: 'rgba(176,190,197,0.04)',
+                                },
+                              }}
+                            >
+                              E{amt}
+                            </Button>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    ) : null}
+
+                    <Button
+                      variant='contained'
+                      color='primary'
+                      size='large'
+                      fullWidth
+                      type='submit'
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <CircularProgress size={22} color='inherit' />
+                      ) : (
+                        currentUnayoCashInLabel
                       )}
                     </Button>
                   </form>
