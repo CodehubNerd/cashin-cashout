@@ -233,7 +233,7 @@ const Home = () => {
                   <Box sx={{ width: '95%', px: 2 }}>
                     {/* Full-width dropdown button with side padding */}
                     <Button
-                      onClick={() => setShowCicoFeatures((prev) => !prev)}
+                      onClick={() => setShowDaasFeatures((prev) => !prev)}
                       variant='outlined'
                       fullWidth
                       sx={{
@@ -246,14 +246,14 @@ const Home = () => {
                         px: 2,
                       }}
                       endIcon={
-                        showCicoFeatures ? <ExpandLess /> : <ExpandMore />
+                        showDaasFeatures ? <ExpandLess /> : <ExpandMore />
                       }
                     >
                       View Features
                     </Button>
 
                     {/* Expandable section - padded and full width */}
-                    <Collapse in={showCicoFeatures}>
+                    <Collapse in={showDaasFeatures}>
                       <Box
                         textAlign='left'
                         sx={{
@@ -268,22 +268,22 @@ const Home = () => {
                           variant='body2'
                           sx={{ display: 'flex', alignItems: 'center', mb: 1 }}
                         >
-                          <CheckCircleOutline sx={{ fontSize: 18, mr: 1 }} />{' '}
-                          Mobile money transactions
+                          <Description sx={{ fontSize: 18, mr: 1 }} /> Performance
+                          tracking and metrics
                         </Typography>
                         <Typography
                           variant='body2'
                           sx={{ display: 'flex', alignItems: 'center', mb: 1 }}
                         >
-                          <AttachMoney sx={{ fontSize: 18, mr: 1 }} /> Cash-in
-                          and cash-out operations
+                          <AttachMoney sx={{ fontSize: 18, mr: 1 }} /> Commission
+                          management
                         </Typography>
                         <Typography
                           variant='body2'
                           sx={{ display: 'flex', alignItems: 'center' }}
                         >
-                          <History sx={{ fontSize: 18, mr: 1 }} /> Transaction
-                          history and reporting
+                          <History sx={{ fontSize: 18, mr: 1 }} /> Service event
+                          submissions
                         </Typography>
                       </Box>
                     </Collapse>

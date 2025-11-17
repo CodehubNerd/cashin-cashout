@@ -17,6 +17,7 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  Pagination,
 } from '@mui/material'
 
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
@@ -70,10 +71,12 @@ const Transactionhistory = () => {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [page, setPage] = useState(1)
+  const rowsPerPage = 6
 
   const { sessionToken } = useAuth()
   const [loading, setLoading] = useState(false)
-  const [snack, setSnack] = useState({ open: false, message: '' })
+  const [snack, setSnack] = useState({ open: false, message: '', isStatus: false })
 
   // new: read wallet from route params or detect in path segments
   const { wallet: walletParam } = useParams()
@@ -91,7 +94,7 @@ const Transactionhistory = () => {
 
   const handleCheck = (id) => {
     if (!sessionToken) {
-      setSnack({ open: true, message: 'Not authenticated' })
+      setSnack({ open: true, message: 'Not authenticated', isStatus: false })
       return
     }
     setLoading(true)
@@ -109,10 +112,10 @@ const Transactionhistory = () => {
         setRows((prev) =>
           prev.map((r) => (r.id === id ? { ...r, status: newStatus } : r))
         )
-        setSnack({ open: true, message: `${id} updated to ${newStatus}` })
+        setSnack({ open: true, message: newStatus, isStatus: true })
       })
       .catch(() => {
-        setSnack({ open: true, message: 'Unable to fetch status' })
+        setSnack({ open: true, message: 'Unable to fetch status', isStatus: false })
       })
       .finally(() => setLoading(false))
   }
@@ -195,6 +198,22 @@ const Transactionhistory = () => {
     return true
   })
 
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage))
+  const paginatedRows = filteredRows.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage
+  )
+
+  useEffect(() => {
+    setPage(1)
+  }, [walletFilter, typeFilter, fromDate, toDate, rows.length])
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
   const clearFilters = () => {
     setWalletFilter('All')
     setTypeFilter('All')
@@ -212,7 +231,11 @@ const Transactionhistory = () => {
             title={<Typography fontWeight={700}>Filters</Typography>}
             action={
               <IconButton onClick={() => setShowFilters((p) => !p)}>
-                {showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                {showFilters ? (
+                  <ExpandLessIcon sx={{ color: '#FFFFFF' }} />
+                ) : (
+                  <ExpandMoreIcon sx={{ color: '#FFFFFF' }} />
+                )}
               </IconButton>
             }
           />
@@ -295,7 +318,7 @@ const Transactionhistory = () => {
                 </Typography>
               </Box>
             ) : (
-              filteredRows.map((r, idx) => (
+              paginatedRows.map((r, idx) => (
                 <Box key={r.id}>
                   <Box
                     display='flex'
@@ -354,18 +377,46 @@ const Transactionhistory = () => {
                     </Box>
                   </Box>
 
-                  {idx < rows.length - 1 && <Divider />}
+                  {idx < paginatedRows.length - 1 && <Divider />}
                 </Box>
               ))
+            )}
+            {filteredRows.length > rowsPerPage && (
+              <Box display='flex' justifyContent='center' mt={3}>
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(_, value) => setPage(value)}
+                  color='primary'
+                />
+              </Box>
             )}
           </CardContent>
         </Card>
 
         <Snackbar
           open={snack.open}
-          message={snack.message}
+          message={
+            <Typography sx={{ color: '#000000' }}>
+              {snack.isStatus ? (
+                <>
+                  Current status of the transaction is{' '}
+                  <Box component='span' fontWeight={700} color='#000000'>
+                    {snack.message}
+                  </Box>
+                </>
+              ) : (
+                snack.message
+              )}
+            </Typography>
+          }
           autoHideDuration={4000}
-          onClose={() => setSnack({ open: false, message: '' })}
+          onClose={() =>
+            setSnack({ open: false, message: '', isStatus: false })
+          }
+          ContentProps={{
+            sx: { backgroundColor: '#FFFFFF' },
+          }}
         />
       </Box>
     </>

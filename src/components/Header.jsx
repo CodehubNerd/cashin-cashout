@@ -26,7 +26,7 @@ import { imagesrc } from '../constants'
 
 const Header = () => {
   const navigate = useNavigate()
-  const { token, logout } = useUserAuth()
+  const { logout } = useUserAuth()
   const theme = useTheme()
   const isSmall = useMediaQuery(theme.breakpoints.down('sm'))
 
@@ -51,30 +51,6 @@ const Header = () => {
     setOpenLogoutSnackbar(false)
     logout()
     navigate('/')
-  }
-
-  const decodeJwt = (t) => {
-    try {
-      const parts = t.split('.')
-      if (parts.length < 2) return null
-      const payload = parts[1]
-      const b64 = payload.replace(/-/g, '+').replace(/_/g, '/')
-      const pad = b64.length % 4
-      const padded = b64 + (pad ? '='.repeat(4 - pad) : '')
-      const json = atob(padded)
-      return JSON.parse(json)
-    } catch (e) {
-      return null
-    }
-  }
-
-  let lastTwoDigits = ''
-  if (token) {
-    try {
-      const decoded = decodeJwt(token)
-      const phoneNumber = decoded?.phone_number || ''
-      lastTwoDigits = phoneNumber.slice(-2)
-    } catch {}
   }
 
   return (
@@ -114,6 +90,12 @@ const Header = () => {
               onClose={handleLeftMenuClose}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
               transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              PaperProps={{
+                sx: {
+                  bgcolor: theme.palette.background.default,
+                  color: '#FFFFFF',
+                },
+              }}
             >
               {/* Profile */}
               <MenuItem
@@ -121,8 +103,9 @@ const Header = () => {
                   handleLeftMenuClose()
                   navigate('/profile')
                 }}
+                sx={{ color: '#FFFFFF' }}
               >
-                <ListItemIcon>
+                <ListItemIcon sx={{ color: '#FFFFFF' }}>
                   <AccountCircleIcon fontSize='small' />
                 </ListItemIcon>
                 Profile
@@ -134,8 +117,9 @@ const Header = () => {
                   handleLeftMenuClose()
                   navigate('/history')
                 }}
+                sx={{ color: '#FFFFFF' }}
               >
-                <ListItemIcon>
+                <ListItemIcon sx={{ color: '#FFFFFF' }}>
                   <HistoryIcon fontSize='small' />
                 </ListItemIcon>
                 Transactions History
