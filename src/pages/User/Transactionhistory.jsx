@@ -28,6 +28,7 @@ import { walletConfig } from '../../lib/wallets'
 import axios from 'axios'
 import { useAuth } from '../../context/appstate/UserAuthContext'
 import { API_URL } from '../../api/Config'
+import { useLocation, useParams } from 'react-router-dom' // added
 
 // Initial state
 const initial = []
@@ -35,15 +36,17 @@ const initial = []
 // Return wallet icon
 const getWalletIcon = (walletName) => {
   if (!walletName) return imagesrc.empty || ''
-  const s = String(walletName).toLowerCase().trim()
+  const key = walletName.toString().trim().toLowerCase()
 
-  if (s.includes('momo')) return imagesrc.momo
-  if (s.includes('deltapay')) return imagesrc.delta
-  if (s.includes('unayo')) return imagesrc.unayo
-  if (s.includes('insta')) return imagesrc.instacash
-  if (s.includes('bank')) return imagesrc.delta
+  // try to find matching wallet from walletConfig first (exact match or contains)
+  const found =
+    walletConfig.find((w) => w.name.toLowerCase() === key) ||
+    walletConfig.find((w) => key.includes(w.name.toLowerCase()))
 
-  return imagesrc.empty || ''
+  if (found && found.icon) return found.icon
+
+  // fallback to imagesrc lookup by key, then empty
+  return imagesrc[key] || imagesrc.empty || ''
 }
 
 // Normalize wallet name
@@ -51,7 +54,7 @@ const normalizeWalletName = (walletName) => {
   if (!walletName) return 'Unknown'
   const s = String(walletName).toLowerCase().trim()
 
-  if (s.includes('momo')) return 'Momo'
+  if (s.includes('momo')) return 'momo'
   if (s.includes('bank')) return 'Bank'
   if (s.includes('delta')) return 'deltapay'
   if (s.includes('unayo')) return 'unayo'
@@ -71,6 +74,20 @@ const Transactionhistory = () => {
   const { sessionToken } = useAuth()
   const [loading, setLoading] = useState(false)
   const [snack, setSnack] = useState({ open: false, message: '' })
+
+  // new: read wallet from route params or detect in path segments
+  const { wallet: walletParam } = useParams()
+  const location = useLocation()
+  const walletFromPath = React.useMemo(() => {
+    // prefer explicit param
+    if (walletParam) return walletParam
+    // otherwise search path segments for a wallet name present in walletConfig
+    const segs = (location.pathname || '').split('/').map((s) => s.toLowerCase())
+    const found = walletConfig.find((w) =>
+      segs.includes(w.name.toLowerCase())
+    )
+    return found?.name ?? null
+  }, [walletParam, location.pathname])
 
   const handleCheck = (id) => {
     if (!sessionToken) {
@@ -110,32 +127,52 @@ const Transactionhistory = () => {
       })
       .then((resp) => {
         const data = resp.data?.data ?? []
-        const mapped = data.map((t) => ({
-          id: t.transaction_id,
-          type: t.transaction_type === 'cash_in' ? 'Cashin' : 'Cashout',
-          number: t.party_id ?? '',
-          wallet:
-            t.wallet ||
-            t.wallet_provider ||
-            t.provider ||
-            t.provider_id ||
-            (t.transaction_type === 'cash_in' ? 'Bank' : 'Momo'),
-          status:
-            t.status === 'successful'
-              ? 'Completed'
-              : t.status === 'pending'
-              ? 'Pending'
-              : 'Failed',
-          timestamp: t.created_at ? t.created_at * 1000 : null,
-          datetime: t.created_at
-            ? new Date(t.created_at * 1000).toLocaleString()
-            : '',
-          amount: Number(t.amount) ?? 0,
-        }))
+        const mapped = data.map((t) => {
+          // try all likely provider fields
+          const candidateFields = [
+            t.wallet,
+            t.wallet_provider,
+            t.provider,
+            t.provider_id,
+            t.providerName,
+            t.provider_name,
+          ].filter(Boolean).map((v) => v.toString().toLowerCase())
+
+          // try to match walletConfig by any candidate field
+          const matchedProvider =
+            walletConfig.find((w) =>
+              candidateFields.some((f) => f.includes(w.name.toLowerCase()))
+            ) || null
+
+          // resolved wallet name: prefer matchedProvider -> first non-empty candidate -> url path -> fallback by type
+          const resolvedWallet =
+            (matchedProvider && matchedProvider.name) ||
+            (candidateFields[0] ? candidateFields[0] : null) ||
+            walletFromPath ||
+            (t.transaction_type === 'cash_in' ? 'Bank' : 'Momo')
+
+          return {
+            id: t.transaction_id,
+            type: t.transaction_type === 'cash_in' ? 'Cashin' : 'Cashout',
+            number: t.party_id ?? '',
+            wallet: resolvedWallet,
+            status:
+              t.status === 'successful'
+                ? 'Completed'
+                : t.status === 'pending'
+                ? 'Pending'
+                : 'Failed',
+            timestamp: t.created_at ? t.created_at * 1000 : null,
+            datetime: t.created_at
+              ? new Date(t.created_at * 1000).toLocaleString()
+              : '',
+            amount: Number(t.amount) ?? 0,
+          }
+        })
         setRows(mapped)
       })
       .finally(() => setLoading(false))
-  }, [sessionToken])
+  }, [sessionToken, walletFromPath]) // include walletFromPath so list updates when route param changes
 
   const walletOptions = Array.from(
     new Set(rows.map((r) => normalizeWalletName(r.wallet)))

@@ -34,9 +34,9 @@ const CashIn = () => {
     amount: '',
     voucherNumber: '',
     pin: '',
+    note: '',
   })
   const [isLoading, setIsLoading] = useState(false)
-  const [loadingProfile, setLoadingProfile] = useState(false)
   const [lastTransactionId, setLastTransactionId] = useState(null)
   const [snackOpen, setSnackOpen] = useState(false)
   const [snackMsg, setSnackMsg] = useState('')
@@ -89,7 +89,6 @@ const CashIn = () => {
     if (typeof agent?.current_balance === 'number') {
       return
     }
-    setLoadingProfile(true)
     try {
       const resp = await axios.get(`${API_URL}/v1/cico/agents/me`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
@@ -104,10 +103,8 @@ const CashIn = () => {
         setAgentBalance(newBal)
         if (agent && updateAgent) updateAgent({ ...agent, ...data })
       }
-    } catch (err) {
+    } catch {
       // ignore
-    } finally {
-      setLoadingProfile(false)
     }
   }, [sessionToken, agent, updateAgent])
 
@@ -127,10 +124,28 @@ const CashIn = () => {
     return isNaN(num) ? 'E 0.00' : `E ${num.toFixed(2)}`
   }
 
+  // helper to build server error messages (include nested bodies)
+  const buildServerErrorMessage = (payload) => {
+    const p = payload ?? {}
+    const top = p.data ?? p
+    const serverError = top?.error ?? top?.message ?? 'Transaction failed'
+    const code = top?.code ?? p?.code
+    let msg = serverError
+    if (code) msg = `${msg} (${code})`
+    return msg
+  }
+
   // On form submit: verify customer and show verification UI
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedWallet) return
+
+    // If deltapay selected, handle through the DeltaPay deposit flow
+    if (selectedWallet?.name === 'deltapay') {
+      await handleDeltaDepositSubmit()
+      return
+    }
+
     if (!formData.amount) {
       setSnackMsg('Enter amount')
       setSnackSeverity('warning')
@@ -168,6 +183,75 @@ const CashIn = () => {
       console.warn('Customer verify failed, showing fallback UI:', err)
       setCustomerData({ phone: formData.msidn, name: formData.msidn })
       setCustomerInfo(null)
+      setStep('verify')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // New: handler to call the deltapay deposit endpoint
+  const handleDeltaDepositSubmit = async () => {
+    // validate
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      setSnackMsg('Enter a valid amount')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    setIsLoading(true)
+    setStep('processing')
+
+    try {
+      const body = {
+        amount: parseFloat(formData.amount).toFixed(2),
+        // only include note per requirement
+        note: formData.note?.trim() || undefined,
+      }
+
+      // Use the documented endpoint (bank) per API docs
+      const url = `${API_URL}/v1/cico/agents/deltapay/deposit/bank`
+      console.debug('DeltaPay deposit request:', url, body)
+
+      const resp = await axios.post(url, body, {
+        headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+      })
+
+      if (resp?.data?.success) {
+        const data = resp.data.data ?? {}
+        // prefer available_balance if provided, else compute from balance_before/amount
+        let newBal = agentBalance
+        if (typeof data.available_balance === 'number') {
+          newBal = data.available_balance
+        } else if (typeof data.balance_before === 'number') {
+          // if deposit pending, available_balance may already reflect deduction; use balance_before +/- amount as reasonable fallback
+          newBal = data.balance_before + Number(formData.amount)
+        } else {
+          // best-effort update
+          newBal = agentBalance + Number(formData.amount)
+        }
+
+        if (agent && updateAgent)
+          updateAgent({ ...agent, current_balance: newBal })
+        setAgentBalance(newBal)
+        setLastTransactionId(data.transaction_id ?? null)
+        setStep('complete')
+      } else {
+        const finalMsg = buildServerErrorMessage(resp)
+        setSnackMsg(finalMsg)
+        setSnackSeverity('error')
+        setSnackOpen(true)
+        setStep('verify')
+      }
+    } catch (err) {
+      console.error('DeltaPay deposit failed:', err)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
+      setSnackSeverity('error')
+      setSnackOpen(true)
       setStep('verify')
     } finally {
       setIsLoading(false)
@@ -258,40 +342,81 @@ const CashIn = () => {
         return
       }
 
-      // on OTP success -> perform the same cash-in with-status call (requires auth token)
+      // on OTP success -> branch for deltapay or standard cash-in
       setStep('processing')
 
-      const response = await axios.post(
-        `${API_URL}/v1/cico/agents/cash-in/with-status?timeout=5`,
-        {
+      if (selectedWallet?.name === 'deltapay') {
+        // perform DeltaPay bank deposit (documented endpoint)
+        const body = {
           amount: parseFloat(formData.amount).toFixed(2),
-          party_id: formData.msidn,
-          description: 'Cash deposit for customer',
-        },
-        { headers: { Authorization: `Bearer ${sessionToken ?? ''}` } }
-      )
+          note: formData.note?.trim() || undefined,
+        }
+        const url = `${API_URL}/v1/cico/agents/deltapay/deposit/bank`
+        console.debug('DeltaPay deposit (OTP flow):', url, body)
 
-      if (response.data?.success) {
-        const newBalance = agentBalance + parseFloat(formData.amount || '0')
-        setAgentBalance(newBalance)
-        if (agent && updateAgent)
-          updateAgent({ ...agent, current_balance: newBalance })
-        setStep('complete')
-        setLastTransactionId(response.data.data?.transaction_id ?? null)
+        const resp = await axios.post(url, body, {
+          headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+        })
+
+        if (resp?.data?.success) {
+          const data = resp.data.data ?? {}
+          let newBal = agentBalance
+          if (typeof data.available_balance === 'number') {
+            newBal = data.available_balance
+          } else if (typeof data.balance_before === 'number') {
+            newBal = data.balance_before + Number(formData.amount)
+          } else {
+            newBal = agentBalance + Number(formData.amount)
+          }
+
+          if (agent && updateAgent)
+            updateAgent({ ...agent, current_balance: newBal })
+          setAgentBalance(newBal)
+          setLastTransactionId(data.transaction_id ?? null)
+          setStep('complete')
+        } else {
+          const finalMsg = buildServerErrorMessage(resp)
+          setSnackMsg(finalMsg)
+          setSnackSeverity('error')
+          setSnackOpen(true)
+          setStep('verify')
+        }
       } else {
-        const serverError =
-          response?.data?.error ??
-          response?.data?.message ??
-          'Transaction failed'
-        const serverCode = response?.data?.code
-        setSnackMsg(serverCode ? `${serverError} (${serverCode})` : serverError)
-        setSnackSeverity('error')
-        setSnackOpen(true)
-        setStep('verify')
+        // existing cash-in with-status flow for other wallets
+        const response = await axios.post(
+          `${API_URL}/v1/cico/agents/cash-in/with-status?timeout=5`,
+          {
+            amount: parseFloat(formData.amount).toFixed(2),
+            party_id: formData.msidn,
+            description: 'Cash deposit for customer',
+          },
+          { headers: { Authorization: `Bearer ${sessionToken ?? ''}` } }
+        )
+
+        if (response.data?.success) {
+          const newBalance = agentBalance + parseFloat(formData.amount || '0')
+          setAgentBalance(newBalance)
+          if (agent && updateAgent)
+            updateAgent({ ...agent, current_balance: newBalance })
+          setStep('complete')
+          setLastTransactionId(response.data.data?.transaction_id ?? null)
+        } else {
+          const serverError =
+            response?.data?.error ??
+            response?.data?.message ??
+            'Transaction failed'
+          const serverCode = response?.data?.code
+          setSnackMsg(
+            serverCode ? `${serverError} (${serverCode})` : serverError
+          )
+          setSnackSeverity('error')
+          setSnackOpen(true)
+          setStep('verify')
+        }
       }
     } catch (err) {
       console.error('OTP verify or transaction failed:', err)
-      const serverErrBody = err.response?.data
+      const serverErrBody = err.response?.data ?? err
       const serverError =
         serverErrBody?.error ??
         serverErrBody?.message ??
@@ -655,91 +780,149 @@ const CashIn = () => {
                 </Button>
               </Box>
             ) : (
-              <form onSubmit={handleSubmit}>
-                {selectedMethod !== 'voucher' && (
-                  <Box mb={2}>
-                    <TextField
-                      label='Customer Phone'
-                      variant='outlined'
-                      fullWidth
-                      value={formData.msidn}
-                      onChange={(e) =>
-                        setFormData({ ...formData, msidn: e.target.value })
-                      }
-                    />
-                  </Box>
-                )}
-
-                {selectedMethod === 'voucher' && (
-                  <Box mb={2}>
-                    <TextField
-                      label='Voucher Number'
-                      variant='outlined'
-                      fullWidth
-                      value={formData.voucherNumber}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          voucherNumber: e.target.value,
-                        })
-                      }
-                    />
-                  </Box>
-                )}
-
-                <Box mb={2}>
-                  <TextField
-                    label='Amount (SZL)'
-                    type='number'
-                    variant='outlined'
-                    fullWidth
-                    value={formData.amount}
-                    onChange={(e) =>
-                      setFormData({ ...formData, amount: e.target.value })
-                    }
-                  />
-                </Box>
-
-                <Grid container spacing={1} mb={2}>
-                  {selectedWallet?.quickAmounts?.map((amt) => (
-                    <Grid item xs={3} key={amt}>
-                      <Button
+              // START: transaction form area (modified to support deltapay)
+              <>
+                {selectedWallet?.name === 'deltapay' ? (
+                  // DeltaPay specific form: only Amount + Note
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      handleDeltaDepositSubmit()
+                    }}
+                  >
+                    <Box mb={2}>
+                      <TextField
+                        label='Amount (SZL)'
+                        type='number'
                         variant='outlined'
                         fullWidth
-                        onClick={() =>
-                          setFormData({ ...formData, amount: amt.toString() })
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
                         }
-                        sx={{
-                          border: '1px solid #B0BEC5',
-                          color: '#B0BEC5',
-                          backgroundColor: 'transparent',
-                          '&:hover': {
-                            border: '1px solid #B0BEC5',
-                            backgroundColor: 'rgba(176,190,197,0.04)',
-                          },
-                        }}
-                      >
-                        E{amt}
-                      </Button>
-                    </Grid>
-                  ))}
-                </Grid>
+                      />
+                    </Box>
 
-                <Button
-                  variant='contained'
-                  color='primary'
-                  size='large'
-                  fullWidth
-                  type='submit'
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <CircularProgress size={22} color='inherit' />
-                  ) : (
-                    'Verify Customer'
-                  )}
-                </Button>
-              </form>
+                    <Box mb={2}>
+                      <TextField
+                        label='Note (optional)'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.note}
+                        onChange={(e) =>
+                          setFormData({ ...formData, note: e.target.value })
+                        }
+                      />
+                    </Box>
+
+                    <Button
+                      variant='contained'
+                      color='primary'
+                      size='large'
+                      fullWidth
+                      type='submit'
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <CircularProgress size={22} color='inherit' />
+                      ) : (
+                        'Initiate DeltaPay Deposit'
+                      )}
+                    </Button>
+                  </form>
+                ) : (
+                  // default existing form for other wallets
+                  <form onSubmit={handleSubmit}>
+                    {selectedMethod !== 'voucher' && (
+                      <Box mb={2}>
+                        <TextField
+                          label='Customer Phone'
+                          variant='outlined'
+                          fullWidth
+                          value={formData.msidn}
+                          onChange={(e) =>
+                            setFormData({ ...formData, msidn: e.target.value })
+                          }
+                        />
+                      </Box>
+                    )}
+
+                    {selectedMethod === 'voucher' && (
+                      <Box mb={2}>
+                        <TextField
+                          label='Voucher Number'
+                          variant='outlined'
+                          fullWidth
+                          value={formData.voucherNumber}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              voucherNumber: e.target.value,
+                            })
+                          }
+                        />
+                      </Box>
+                    )}
+
+                    <Box mb={2}>
+                      <TextField
+                        label='Amount (SZL)'
+                        type='number'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
+                        }
+                      />
+                    </Box>
+
+                    <Grid container spacing={1} mb={2}>
+                      {selectedWallet?.quickAmounts?.map((amt) => (
+                        <Grid item xs={3} key={amt}>
+                          <Button
+                            variant='outlined'
+                            fullWidth
+                            onClick={() =>
+                              setFormData({
+                                ...formData,
+                                amount: amt.toString(),
+                              })
+                            }
+                            sx={{
+                              border: '1px solid #B0BEC5',
+                              color: '#B0BEC5',
+                              backgroundColor: 'transparent',
+                              '&:hover': {
+                                border: '1px solid #B0BEC5',
+                                backgroundColor: 'rgba(176,190,197,0.04)',
+                              },
+                            }}
+                          >
+                            E{amt}
+                          </Button>
+                        </Grid>
+                      ))}
+                    </Grid>
+
+                    <Button
+                      variant='contained'
+                      color='primary'
+                      size='large'
+                      fullWidth
+                      type='submit'
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <CircularProgress size={22} color='inherit' />
+                      ) : (
+                        'Verify Customer'
+                      )}
+                    </Button>
+                  </form>
+                )}
+              </>
+              // END: transaction form area
             )}
           </CardContent>
         </Card>

@@ -12,6 +12,7 @@ import {
   Grid,
   Snackbar,
   Alert,
+  MenuItem,
 } from '@mui/material'
 import { ArrowBack } from '@mui/icons-material'
 import UndoIcon from '@mui/icons-material/Undo'
@@ -21,6 +22,14 @@ import { API_URL } from '../../api/Config'
 import { walletProviders } from '../../lib/wallets'
 import Header from '../../components/Header'
 import { imagesrc } from '../../constants'
+
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'savings', label: 'Savings' },
+  { value: 'checking', label: 'Checking' },
+  { value: 'current', label: 'Current' },
+]
+
+const BANK_OPTIONS = ['FNB', 'Eswatini Bank', 'Nedbank', 'Standard Bank']
 
 const Cashout = () => {
   const { sessionToken, agent, updateAgent } = useAuth()
@@ -33,9 +42,14 @@ const Cashout = () => {
     amount: '',
     voucherNumber: '',
     pin: '',
+    bankAccountHolder: '',
+    bankAccountNumber: '',
+    bankAccountType: '',
+    bankName: '',
+    bankBranchName: '',
+    bankCountry: 'Eswatini',
   })
   const [isLoading, setIsLoading] = useState(false)
-  const [loadingProfile, setLoadingProfile] = useState(false)
   const [lastTransactionId, setLastTransactionId] = useState(null)
 
   const [customerData, setCustomerData] = useState(null)
@@ -89,7 +103,6 @@ const Cashout = () => {
     if (typeof agent?.current_balance === 'number') {
       return
     }
-    setLoadingProfile(true)
     try {
       const resp = await axios.get(`${API_URL}/v1/cico/agents/me`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
@@ -104,10 +117,8 @@ const Cashout = () => {
         setAgentBalance(newBal)
         if (agent && updateAgent) updateAgent({ ...agent, ...data })
       }
-    } catch (err) {
+    } catch {
       // ignore, keep current
-    } finally {
-      setLoadingProfile(false)
     }
   }, [sessionToken, agent, updateAgent])
 
@@ -158,6 +169,7 @@ const Cashout = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!selectedWallet) return
+    if (selectedWallet?.name === 'deltapay') return
     if (!formData.amount) {
       setSnackMsg('Enter amount')
       setSnackSeverity('warning')
@@ -220,8 +232,103 @@ const Cashout = () => {
     }
   }
 
+  const handleDeltaWithdrawalSubmit = async (e) => {
+    e?.preventDefault?.()
+    if (selectedWallet?.name !== 'deltapay') return
+
+    const validations = [
+      { value: formData.amount, message: 'Enter a valid amount' },
+      {
+        value: formData.bankAccountHolder,
+        message: 'Enter account holder name',
+      },
+      { value: formData.bankAccountNumber, message: 'Enter account number' },
+      { value: formData.bankAccountType, message: 'Select account type' },
+      { value: formData.bankName, message: 'Select bank name' },
+      { value: formData.bankBranchName, message: 'Enter bank branch name' },
+      { value: formData.bankCountry, message: 'Enter bank country' },
+    ]
+
+    const invalid = validations.find(
+      ({ value }) =>
+        !value || (typeof value === 'string' && !value.toString().trim())
+    )
+
+    if (invalid) {
+      setSnackMsg(invalid.message)
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    const amountNum = Number(formData.amount)
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setSnackMsg('Enter a valid amount')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    setIsLoading(true)
+    setStep('processing')
+
+    try {
+      const body = {
+        amount: amountNum.toFixed(2),
+        bank_account_holder: formData.bankAccountHolder.trim(),
+        bank_account_number: formData.bankAccountNumber.trim(),
+        bank_account_type: formData.bankAccountType,
+        bank_name: formData.bankName,
+        bank_branch_name: formData.bankBranchName.trim(),
+        bank_country: formData.bankCountry.trim(),
+      }
+
+      const url = `${API_URL}/v1/cico/agents/deltapay/withdrawal/bank`
+      const resp = await axios.post(url, body, {
+        headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+      })
+
+      if (resp?.data?.success) {
+        const data = resp.data.data ?? {}
+        let newBal = agentBalance
+        if (typeof data.available_balance === 'number') {
+          newBal = data.available_balance
+        } else if (typeof data.balance_before === 'number') {
+          newBal = data.balance_before - amountNum
+        } else {
+          newBal = agentBalance - amountNum
+        }
+
+        if (agent && updateAgent)
+          updateAgent({ ...agent, current_balance: newBal })
+        setAgentBalance(newBal)
+        setLastTransactionId(data.transaction_id ?? null)
+        setStep('complete')
+      } else {
+        const finalMsg = buildServerErrorMessage(resp)
+        setSnackMsg(finalMsg)
+        setSnackSeverity('error')
+        setSnackOpen(true)
+        setStep('transaction')
+      }
+    } catch (err) {
+      console.error('DeltaPay bank withdrawal failed:', err)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
+      setSnackSeverity('error')
+      setSnackOpen(true)
+      setStep('transaction')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleKYCConfirm = async () => {
     if (!selectedWallet) return
+    if (selectedWallet?.name === 'deltapay') return
 
     if (!formData.amount) {
       setSnackMsg('Enter amount')
@@ -302,18 +409,26 @@ const Cashout = () => {
           <Card sx={{ textAlign: 'center', p: 3, maxWidth: 520 }}>
             <CircularProgress sx={{ mb: 2 }} />
             <Typography variant='h6' fontWeight='bold' gutterBottom>
-              Awaiting for approval
+              {selectedWallet?.name === 'deltapay'
+                ? 'Processing bank withdrawal'
+                : 'Awaiting approval'}
             </Typography>
             <Typography variant='body2' color='textSecondary'>
-              Please approved the transaction on your device...
+              {selectedWallet?.name === 'deltapay'
+                ? 'Submitting withdrawal request to DeltaPay. This may take a moment.'
+                : 'Please approve the transaction on your device.'}
             </Typography>
             {/* optional small back/cancel action */}
             <Box mt={3}>
               <Button
                 variant='outlined'
                 onClick={() => {
-                  // allow user to return to verify screen while keeping request in background
-                  setStep('verify')
+                  // allow user to return while keeping request in background
+                  setStep(
+                    selectedWallet?.name === 'deltapay'
+                      ? 'transaction'
+                      : 'verify'
+                  )
                   setIsLoading(false)
                 }}
               >
@@ -350,7 +465,7 @@ const Cashout = () => {
               Transaction Successful!
             </Typography>
             <Typography variant='body2' color='textSecondary' mb={2}>
-              Cash-in of {formatCurrency(formData.amount)} completed
+              Cash-out of {formatCurrency(formData.amount)} completed
               successfully.
             </Typography>
             <Typography variant='body2' sx={{ mt: 2 }}>
@@ -424,7 +539,7 @@ const Cashout = () => {
             <CardHeader
               title={
                 <Typography variant='h6' fontWeight='bold'>
-                  CashIn Transaction
+                  CashOut Transaction
                 </Typography>
               }
             />
@@ -571,6 +686,178 @@ const Cashout = () => {
                   )}
                 </Button>
               </Box>
+            ) : selectedWallet?.name === 'deltapay' ? (
+              <form onSubmit={handleDeltaWithdrawalSubmit}>
+                <Box mb={2}>
+                  <TextField
+                    label='Amount (SZL)'
+                    type='number'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.amount}
+                    onChange={(e) =>
+                      setFormData({ ...formData, amount: e.target.value })
+                    }
+                  />
+                </Box>
+
+                <Box mb={2}>
+                  <TextField
+                    label='Account Holder Name'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.bankAccountHolder}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        bankAccountHolder: e.target.value,
+                      })
+                    }
+                  />
+                </Box>
+
+                <Box mb={2}>
+                  <TextField
+                    label='Account Number'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.bankAccountNumber}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        bankAccountNumber: e.target.value,
+                      })
+                    }
+                  />
+                </Box>
+
+                <Grid container spacing={2} mb={2}>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      select
+                      label='Account Type'
+                      InputLabelProps={{ shrink: true }}
+                      variant='outlined'
+                      fullWidth
+                      value={formData.bankAccountType}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          bankAccountType: e.target.value,
+                        })
+                      }
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (selected) => {
+                          if (!selected) {
+                            return (
+                              <Typography color='text.secondary'>
+                                Select account type
+                              </Typography>
+                            )
+                          }
+                          const found = ACCOUNT_TYPE_OPTIONS.find(
+                            (opt) => opt.value === selected
+                          )
+                          return found?.label ?? selected
+                        },
+                      }}
+                    >
+                      <MenuItem value='' disabled>
+                        <em>Select account type</em>
+                      </MenuItem>
+                      {ACCOUNT_TYPE_OPTIONS.map((opt) => (
+                        <MenuItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      select
+                      label='Bank Name'
+                      InputLabelProps={{ shrink: true }}
+                      variant='outlined'
+                      fullWidth
+                      value={formData.bankName}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          bankName: e.target.value,
+                        })
+                      }
+                      SelectProps={{
+                        displayEmpty: true,
+                        renderValue: (selected) => {
+                          if (!selected) {
+                            return (
+                              <Typography color='text.secondary'>
+                                Select bank
+                              </Typography>
+                            )
+                          }
+                          return selected
+                        },
+                      }}
+                    >
+                      <MenuItem value='' disabled>
+                        <em>Select bank</em>
+                      </MenuItem>
+                      {BANK_OPTIONS.map((name) => (
+                        <MenuItem key={name} value={name}>
+                          {name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                </Grid>
+
+                <Box mb={2}>
+                  <TextField
+                    label='Bank Branch Name'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.bankBranchName}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        bankBranchName: e.target.value,
+                      })
+                    }
+                  />
+                </Box>
+
+                <Box mb={3}>
+                  <TextField
+                    label='Bank Country'
+                    variant='outlined'
+                    fullWidth
+                    value={formData.bankCountry}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        bankCountry: e.target.value,
+                      })
+                    }
+                  />
+                </Box>
+
+                <Button
+                  variant='contained'
+                  color='primary'
+                  size='large'
+                  fullWidth
+                  type='submit'
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <CircularProgress size={22} color='inherit' />
+                  ) : (
+                    'Initiate DeltaPay Withdrawal'
+                  )}
+                </Button>
+              </form>
             ) : (
               <form onSubmit={handleSubmit}>
                 {selectedMethod !== 'voucher' && (
