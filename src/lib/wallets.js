@@ -5,7 +5,7 @@ export const walletConfig = [
   { name: "momo", enabled: true, icon: imagesrc.momo },
   { name: "unayo", enabled: false, icon: imagesrc.unayo },
   { name: "deltapay", enabled: true, icon: imagesrc.delta },
-  { name: "instacash", enabled: false, icon: imagesrc.instacash },
+  { name: "instacash", enabled: true, icon: imagesrc.instacash },
 ];
 
 // Transaction types

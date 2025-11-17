@@ -35,6 +35,7 @@ const CashIn = () => {
     voucherNumber: '',
     pin: '',
     note: '',
+    phoneNumber: '',
   })
   const [isLoading, setIsLoading] = useState(false)
   const [lastTransactionId, setLastTransactionId] = useState(null)
@@ -146,6 +147,11 @@ const CashIn = () => {
       return
     }
 
+    if (selectedWallet?.name === 'instacash') {
+      await handleInstaDepositSubmit()
+      return
+    }
+
     if (!formData.amount) {
       setSnackMsg('Enter amount')
       setSnackSeverity('warning')
@@ -253,6 +259,85 @@ const CashIn = () => {
       setSnackSeverity('error')
       setSnackOpen(true)
       setStep('verify')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleInstaDepositSubmit = async () => {
+    if (!formData.amount || Number(formData.amount) <= 0) {
+      setSnackMsg('Enter a valid amount')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    const dialCode = '268'
+    const rawPhone = formData.phoneNumber?.toString().trim()
+    const digitsOnly = rawPhone?.replace(/\D/g, '')
+
+    if (!digitsOnly) {
+      setSnackMsg('Enter customer phone number')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    if (digitsOnly.length !== 8) {
+      setSnackMsg('Phone number must be 8 digits')
+      setSnackSeverity('warning')
+      setSnackOpen(true)
+      return
+    }
+
+    setIsLoading(true)
+    setStep('processing')
+
+    try {
+      const body = {
+        amount: parseFloat(formData.amount).toFixed(2),
+        phone_country_dialcode: dialCode,
+        phone_number: digitsOnly,
+      }
+
+      const url = `${API_URL}/v1/cico/agents/deltapay/deposit/instacash`
+      const resp = await axios.post(url, body, {
+        headers: { Authorization: `Bearer ${sessionToken ?? ''}` },
+      })
+
+      if (resp?.data?.success) {
+        const data = resp.data.data ?? {}
+        let newBal = agentBalance
+        if (typeof data.available_balance === 'number') {
+          newBal = data.available_balance
+        } else if (typeof data.balance_before === 'number') {
+          newBal = data.balance_before - Number(formData.amount)
+        } else {
+          newBal = agentBalance - Number(formData.amount)
+        }
+
+        if (agent && updateAgent)
+          updateAgent({ ...agent, current_balance: newBal })
+        setAgentBalance(newBal)
+        setLastTransactionId(data.transaction_id ?? null)
+        setStep('complete')
+      } else {
+        const finalMsg = buildServerErrorMessage(resp)
+        setSnackMsg(finalMsg)
+        setSnackSeverity('error')
+        setSnackOpen(true)
+        setStep('transaction')
+      }
+    } catch (err) {
+      console.error('InstaCash deposit failed:', err)
+      const serverErrBody = err.response?.data ?? err
+      const finalMsg = buildServerErrorMessage(
+        err.response ?? serverErrBody ?? err
+      )
+      setSnackMsg(finalMsg)
+      setSnackSeverity('error')
+      setSnackOpen(true)
+      setStep('transaction')
     } finally {
       setIsLoading(false)
     }
@@ -827,6 +912,57 @@ const CashIn = () => {
                         <CircularProgress size={22} color='inherit' />
                       ) : (
                         'Initiate DeltaPay Deposit'
+                      )}
+                    </Button>
+                  </form>
+                ) : selectedWallet?.name === 'instacash' ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      handleInstaDepositSubmit()
+                    }}
+                  >
+                    <Box mb={2}>
+                      <TextField
+                        label='Amount (SZL)'
+                        type='number'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.amount}
+                        onChange={(e) =>
+                          setFormData({ ...formData, amount: e.target.value })
+                        }
+                      />
+                    </Box>
+
+                    <Box mb={2}>
+                      <TextField
+                        label='Phone Number'
+                        variant='outlined'
+                        fullWidth
+                        value={formData.phoneNumber}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            phoneNumber: e.target.value,
+                          })
+                        }
+                        helperText='Enter 8-digit InstaCash number (e.g., 76XXXXXX)'
+                      />
+                    </Box>
+
+                    <Button
+                      variant='contained'
+                      color='primary'
+                      size='large'
+                      fullWidth
+                      type='submit'
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <CircularProgress size={22} color='inherit' />
+                      ) : (
+                        'Initiate InstaCash Deposit'
                       )}
                     </Button>
                   </form>
